@@ -1,0 +1,32 @@
+[
+  {
+    "question": "The PyTorch training script fails in the CI pipeline with a CUDA error, even though it works locally. What's wrong?",
+    "log_excerpt": "RuntimeError: Found no NVIDIA driver on your system.\nCUDA error: invalid device ordinal\n  File \"train.py\", line 42, in <module>\n    model.cuda()\n",
+    "ground_truth": "Description     : The PyTorch version is incompatible with the CUDA toolkit version on the CI/CD build agent.\nError syntax    : RuntimeError: Found no NVIDIA driver on your system. / CUDA error: invalid device ordinal\nReason          : The CI/CD runner's environment likely has an older CUDA toolkit that doesn't meet the minimum requirement for torch==2.6.0.\nSuggested fix   : 1. Check the CI/CD job logs for the output of the `nvidia-smi` command to see the installed CUDA version.\n2. Ensure the runner's environment is configured with a CUDA version compatible with PyTorch 2.6.0 (e.g., CUDA 12.1+)."
+  },
+  {
+    "question": "Our pipeline is failing during 'pip install' on the tenseal library. What is the cause?",
+    "log_excerpt": "error: subprocess-exited-with-error\n× python setup.py bdist_wheel did not run successfully.\nnote: This error originates from a subprocess, and is likely not a problem with pip.\n  File \"/usr/local/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py\", line 353, in <module>\n    main()\n",
+    "ground_truth": "Description     : The installation of the 'tenseal' package failed because of missing system-level dependencies.\nError syntax    : error: subprocess-exited-with-error\n                 × python setup.py bdist_wheel did not run successfully.\n                 note: This error originates from a subprocess, and is likely not a problem with pip.\nReason          : Tenseal requires a C++ compiler (like g++) and build tools to be present in the build environment to compile its source code. These are often missing from base Docker images.\nSuggested fix   : 1. Modify the Dockerfile or CI/CD script to install the necessary build tools before running 'pip install'.\n2. For Debian/Ubuntu, add the command: `apt-get update && apt-get install build-essential -y`."
+  },
+  {
+    "question": "The application crashes on startup with an ImportError related to scikit-learn. What happened?",
+    "log_excerpt": "ImportError: `scikit-learn` requires `numpy` >= 1.22.3 but you have numpy==1.21.0 which is not compatible.\n  File \"main.py\", line 5, in <module>\n    import sklearn\n",
+    "ground_truth": "Description     : A dependency conflict occurred where a package required by scikit-learn was updated to an incompatible version.\nError syntax    : ImportError: `scikit-learn` requires `numpy` >= 1.22.3 but you have numpy==1.21.0 which is not compatible.\nReason          : The requirement `scikit-learn>=1.6.1` is not specific. Another library likely installed a different, incompatible version of a shared dependency like NumPy or SciPy.\nSuggested fix   : 1. 'Pin' the specific version of scikit-learn in your dependencies file (e.g., `scikit-learn==1.6.1`).\n2. Create a `requirements.lock` file using a tool like `pip-tools` to ensure all sub-dependency versions are fixed and repeatable."
+  },
+  {
+    "question": "The pipeline failed with a rare error: 'UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte'. What should I do?",
+    "log_excerpt": "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte\n  File \"data_loader.py\", line 17, in <module>\n    data = open('data.bin', 'r').read()\n",
+    "ground_truth": "Description     : The pipeline encountered a UnicodeDecodeError when reading a binary file as text.\nError syntax    : UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte\nReason          : The file 'data.bin' is likely a binary file, but it was opened in text mode ('r') instead of binary mode ('rb').\nSuggested fix   : Open binary files with 'rb' mode, e.g., open('data.bin', 'rb')."
+  },
+  {
+    "question": "The pipeline ran successfully, but I want to confirm there are no errors. Is everything OK?",
+    "log_excerpt": "INFO: All tests passed.\nINFO: Build completed successfully.\nINFO: No errors detected.\n",
+    "ground_truth": "Description     : Analysis complete. No critical errors were found in the provided log."
+  },
+  {
+    "question": "The pipeline failed with an error message I can't find in the documentation. What should I do?",
+    "log_excerpt": "CustomError: Something went wrong in the custom plugin.\n  File \"plugin.py\", line 88, in <module>\n    raise CustomError('Something went wrong in the custom plugin.')\n",
+    "ground_truth": "Description     : The error message does not match any known documentation or standard errors.\nError syntax    : CustomError: Something went wrong in the custom plugin.\nReason          : This is a custom error from a plugin or third-party tool not covered in the documentation.\nSuggested fix   : Check the plugin's own documentation or contact its maintainer for support."
+  }
+]

@@ -1,0 +1,45 @@
+# This is a TOML configuration file for a RAG (Retrieval-Augmented Generation) application.
+
+[project]
+name = "RAG Application"
+description = "A RAG application that uses LangChain and OpenAI to analyze CI/CD pipeline errors."
+version = "1.0.0"
+requires-python = "3.12"
+
+dependencies = [
+    "python==3.12",
+    "setuptools",
+    "langchain",
+    "langchain_community",
+    "langchain_ollama",
+    "ollama",
+    "psycopg2"
+]
+
+[settings]
+chunk_size = 1024 
+chunk_overlap = 300
+embedding_table_name = "langchain_pg_embedding" 
+collection_table_name = "langchain_pg_collection" 
+connection_string = "postgresql+psycopg2://postgres:root@pgvector:5432/vector_db"
+collection_name = "Error_handling"
+embedding_temperature = 0.2
+
+[database]
+ollama = "http://ollama:11434"
+
+
+[lab_model]
+embedding_models = [
+    "mxbai-embed-large:latest",
+    "nomic-embed-text",
+    "all-minilm"
+]
+
+[dgx_model]
+embedding_models = [
+    "nomic-embed-text",
+    "jina/jina-embeddings-v2-base-en:latest",
+    "mxbai-embed-large:latest"
+]
+

@@ -1,0 +1,83 @@
+# Production Environment Configuration Values
+# For use with potential Kubernetes/Helm deployment in the future
+
+environment: production
+namespace: rag-production
+
+replicaCount: 2
+
+image:
+  repository: rag-application
+  tag: latest
+  pullPolicy: Always
+
+service:
+  type: LoadBalancer
+  port: 8000
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  host: rag-api.example.com
+  tls: true
+  certIssuer: letsencrypt-prod
+
+database:
+  host: pgvector-prod
+  port: 5432
+  name: vector_db_production
+  user: postgres
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # 2 AM daily
+
+ollama:
+  host: ollama-prod
+  port: 11434
+
+rag:
+  environment: dgx_model
+  model: my_llama4:latest
+  collectionName: Error_handling_production
+
+resources:
+  limits:
+    cpu: 4
+    memory: 8Gi
+  requests:
+    cpu: 2
+    memory: 4Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+gpu:
+  enabled: true
+  nvidia:
+    enabled: true
+    deviceCount: 1
+
+monitoring:
+  enabled: true
+  prometheus:
+    enabled: true
+  grafana:
+    enabled: true
+
+logging:
+  level: INFO
+  retention: 30  # days
+
+security:
+  networkPolicy: enabled
+  rbac: enabled
+  podSecurityPolicy: enabled
+
+deployment:
+  strategy: RollingUpdate
+  maxUnavailable: 0
+  maxSurge: 1

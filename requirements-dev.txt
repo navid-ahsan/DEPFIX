@@ -1,0 +1,33 @@
+# Development & Testing Dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Testing Framework
+pytest==8.3.6
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+pytest-xdist==3.6.1  # For parallel test execution
+
+# Code Quality & Linting
+black==24.10.0  # Code formatter
+flake8==7.1.1  # Linting
+pylint==3.2.6  # Additional linting
+isort==5.13.2  # Import sorting
+
+# Type Checking
+mypy==1.13.0
+types-toml==0.10.8.20240310
+types-aiofiles==24.1.0.20240626
+
+# Documentation
+sphinx==8.0.2
+sphinx-rtd-theme==2.0.0
+
+# Debugging & Development
+ipdb==0.13.13
+python-dotenv==1.0.1  # For .env file support
+
+# Pre-commit hooks (optional but recommended)
+pre-commit==4.0.1
+
+# All packages from requirements.txt are also needed
+-r requirements.txt

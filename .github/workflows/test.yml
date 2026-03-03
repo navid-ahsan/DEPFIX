@@ -1,0 +1,129 @@
+name: Test & Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 backend/ src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings
+          flake8 backend/ src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: true
+
+      - name: Check code syntax
+        run: |
+          python -m py_compile backend/app/agents/__init__.py
+          python -m py_compile backend/app/agents/base.py
+          python -m py_compile backend/app/agents/orchestrator.py
+          python -m py_compile backend/app/agents/intent_analyzer.py
+          python -m py_compile backend/app/core/vector_db.py
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -m unit -v --tb=short
+        continue-on-error: true
+
+      - name: Run integration tests (mock)
+        run: |
+          pytest tests/ -m "not integration" -v --tb=short
+        continue-on-error: true
+
+      - name: Generate coverage report
+        run: |
+          pytest tests/ --cov=backend --cov=src --cov-report=xml --cov-report=term-missing
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+        continue-on-error: true
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black isort mypy requests
+      
+      - name: Check formatting with black
+        run: black --check backend/ src/ tests/ --diff
+        continue-on-error: true
+      
+      - name: Check import ordering with isort
+        run: isort --check-only backend/ src/ tests/ --diff
+        continue-on-error: true
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+      
+      - name: Run security checks with bandit
+        run: bandit -r backend/ src/ --exclude tests/ --exit-zero
+        continue-on-error: true
+      
+      - name: Check for known vulnerabilities
+        run: pip install safety && safety check --json
+        continue-on-error: true
+
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      
+      - name: Check that README and DEVELOPMENT exist
+        run: |
+          test -f README.md && echo "✓ README.md exists"
+          test -f DEVELOPMENT.md && echo "✓ DEVELOPMENT.md exists"

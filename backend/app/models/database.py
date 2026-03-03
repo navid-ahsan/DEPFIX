@@ -1,0 +1,215 @@
+"""SQLAlchemy database models."""
+
+from datetime import datetime
+from typing import Optional
+from sqlalchemy import Column, String, Integer, Text, DateTime, Boolean, JSON, ForeignKey
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
+import uuid
+
+Base = declarative_base()
+
+
+class User(Base):
+    """User model."""
+
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=True)  # Optional for OAuth
+    is_active = Column(Boolean, default=True, index=True)
+    is_admin = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    logs = relationship("Log", back_populates="user", cascade="all, delete-orphan")
+    queries = relationship("Query", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<User {self.username}>"
+
+
+class Log(Base):
+    """Error log file model."""
+
+    __tablename__ = "logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)  # Raw log content
+    file_format = Column(String(50), default="txt")  # txt, json, log, etc.
+    file_size_bytes = Column(Integer)
+
+    # Processing metadata
+    is_processed = Column(Boolean, default=False, index=True)
+    error_count = Column(Integer, default=0)
+    primary_error_type = Column(String(255), nullable=True)
+    primary_error_category = Column(String(255), nullable=True)
+
+    # Extracted error info (JSON)
+    extracted_errors = Column(JSON, nullable=True)
+    error_summary = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="logs")
+    queries = relationship("Query", back_populates="log")
+
+    def __repr__(self) -> str:
+        return f"<Log {self.filename}>"
+
+
+class Dependency(Base):
+    """Known Python dependency/package model."""
+
+    __tablename__ = "dependencies"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    display_name = Column(String(255))  # e.g., "PyTorch" for "torch"
+    description = Column(Text, nullable=True)
+
+    # Metadata
+    homepage = Column(String(500))
+    documentation_url = Column(String(500))
+    pypi_url = Column(String(500))
+    repository_url = Column(String(500))
+
+    # Version tracking
+    latest_version = Column(String(50))
+    last_version_check = Column(DateTime)
+
+    # Cached documentation
+    docs_cache = Column(JSON, nullable=True)  # Cached doc snippets
+    docs_cached_at = Column(DateTime)
+
+    # Category for filtering
+    category = Column(String(50))  # ml, web, data, crypto, etc.
+    is_active = Column(Boolean, default=True, index=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    queries = relationship("Query", secondary="query_dependencies", back_populates="dependencies")
+
+    def __repr__(self) -> str:
+        return f"<Dependency {self.name}>"
+
+
+class Query(Base):
+    """RAG query and result model."""
+
+    __tablename__ = "queries"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    log_id = Column(String(36), ForeignKey("logs.id"), nullable=True)
+
+    # Query content
+    query_text = Column(Text, nullable=False)
+    query_intent = Column(String(50))  # guidance, fix, analysis
+    query_intent_category = Column(String(50))  # dependency, incompatibility, runtime, etc.
+
+    # Selected dependencies
+    selected_dependencies = Column(JSON, nullable=True)  # List of dependency names
+
+    # RAG Processing
+    retrieved_docs = Column(JSON, nullable=True)  # Retrieved context chunks
+    retrieval_scores = Column(JSON, nullable=True)  # Relevance scores
+
+    # LLM Result
+    generated_response = Column(Text, nullable=True)
+    response_quality = Column(String(50))  # good, moderate, poor
+    is_response_approved = Column(Boolean, default=False)
+
+    # Code suggestions (if applicable)
+    suggested_fixes = Column(JSON, nullable=True)
+    accepted_fix = Column(JSON, nullable=True)
+    fix_executed = Column(Boolean, default=False)
+    fix_result = Column(JSON, nullable=True)
+
+    # Evaluation
+    is_evaluated = Column(Boolean, default=False)
+    evaluation_score = Column(String(50))  # 1.0-5.0 or good/fair/poor
+    evaluation_feedback = Column(Text)
+    evaluation_metadata = Column(JSON)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="queries")
+    log = relationship("Log", back_populates="queries")
+    dependencies = relationship(
+        "Dependency",
+        secondary="query_dependencies",
+        back_populates="queries"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Query {self.id[:8]}>"
+
+
+class QueryDependency(Base):
+    """Many-to-many relationship between queries and dependencies."""
+
+    __tablename__ = "query_dependencies"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    query_id = Column(String(36), ForeignKey("queries.id"), nullable=False, index=True)
+    dependency_id = Column(String(36), ForeignKey("dependencies.id"), nullable=False, index=True)
+
+    # Track when dependency was added to query
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<QueryDependency {self.query_id} -> {self.dependency_id}>"
+
+
+class VectorStore(Base):
+    """Model for tracking which embeddings have been indexed."""
+
+    __tablename__ = "vector_stores"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    dependency_id = Column(String(36), ForeignKey("dependencies.id"), nullable=False)
+    collection_name = Column(String(255), nullable=False, index=True)
+
+    # Tracking
+    chunk_count = Column(Integer, default=0)
+    is_indexed = Column(Boolean, default=False)
+    embedding_model = Column(String(255))
+    vector_db_type = Column(String(50))  # pgvector, milvus, weaviate, etc.
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<VectorStore {self.collection_name}>"
+
+
+class APIKey(Base):
+    """API key model for external integrations."""
+
+    __tablename__ = "api_keys"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    service = Column(String(50))  # github, gitlab, openai, etc.
+    key_hash = Column(String(255), nullable=False)  # Hashed key
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<APIKey {self.service}>"

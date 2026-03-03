@@ -1,0 +1,13 @@
+{{ if .System }}
+{{ .System }}
+
+{{ end }}
+User Question: {{ .Prompt }}
+
+Logs:
+{{ .LogContent }}
+
+Retrieved Knowledge:
+{{ .RetrievedDocs }}
+
+Assistant:

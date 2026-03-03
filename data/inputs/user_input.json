@@ -1,0 +1,11 @@
+[
+    {
+        "question": "What is the root cause of the TypeError in this CI/CD log?",
+        "log_file": "error1.log"
+    },
+
+    {
+        "question": "How do I fix the TypeError: the first argument must be callable error reported in this log file?",
+        "log_file": "error2.log"
+    }
+]

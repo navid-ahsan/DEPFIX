@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.coverage
+.pytest_cache/
+coverage.xml
+
+# Environments
+.env
+.env.local
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Project data (large files)
+/data/models/blobs/
+/data/models/manifests/
+/data/outputs/
+/db/embed_data
+/data/doc_sources
+
+# Testing
+test_results/
+htmlcov/

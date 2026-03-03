@@ -1,0 +1,110 @@
+services:
+  pgvector:
+    image: ankane/pgvector:latest
+    container_name: pgvector
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: vector_db
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    networks:
+      - rag-net
+    deploy:
+      resources:
+        limits:
+          cpus: 4
+          memory: 8G
+        reservations:
+          cpus: 2
+          memory: 4G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    runtime: nvidia
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_MODELS=/root/.ollama/models
+      - OLLAMA_BUILD=/root/.ollama/build
+    volumes:
+      - ./data/models:/root/.ollama/models
+      - ./ollama_build:/root/.ollama/build
+    ports:
+      - 11434:11434
+    networks:
+      - rag-net
+    deploy:
+      resources:
+        limits:
+          cpus: 4
+          memory: 8G
+        reservations:
+          cpus: 2
+          memory: 4G
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  py-script:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rag-image:latest
+    container_name: py-script
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - /app/__pycache__
+    ports:
+      - 8000:8000
+    networks:
+      - rag-net
+    deploy:
+      resources:
+        limits:
+          cpus: 4
+          memory: 8G
+        reservations:
+          cpus: 2
+          memory: 4G
+    environment:
+      ENV: dgx_model
+      MODEL: my_llama4:latest
+      PYTHONUNBUFFERED: "1"
+    command: python3 /app/src/server.py --env dgx_model --model my_llama4:latest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    tty: true
+    stdin_open: true
+
+networks:
+  rag-net:
+    driver: bridge
+
+volumes:
+  pgvector_data:
+    driver: local

@@ -1,0 +1,30 @@
+# Staging Environment Docker Compose Override
+# Use with: docker-compose -f docker-compose.yml -f deploy/docker-compose-staging.yml up
+
+version: '3.8'
+
+services:
+  pgvector:
+    container_name: pgvector-staging
+    environment:
+      POSTGRES_DB: vector_db_staging
+    ports:
+      - 5433:5432  # Different port for staging
+
+  ollama:
+    container_name: ollama-staging
+    environment:
+      - OLLAMA_MODELS=/root/.ollama/models/staging
+    ports:
+      - 11435:11434  # Different port for staging
+
+  py-script:
+    container_name: py-script-staging
+    environment:
+      ENV: lab_model
+      MODEL: mistral:7b  # Smaller model for staging
+      DATABASE_HOST: pgvector-staging
+      OLLAMA_HOST: http://ollama-staging:11434
+    ports:
+      - 8001:8000  # Different port for staging
+    command: python3 /app/src/server.py --env lab_model --model mistral:7b

@@ -1,0 +1,54 @@
+# Staging Environment Configuration Values
+# For use with potential Kubernetes/Helm deployment in the future
+
+environment: staging
+namespace: rag-staging
+
+replicaCount: 1
+
+image:
+  repository: rag-application
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  host: rag-api-staging.example.com
+  tls: false
+
+database:
+  host: pgvector-staging
+  port: 5432
+  name: vector_db_staging
+  user: postgres
+
+ollama:
+  host: ollama-staging
+  port: 11434
+
+rag:
+  environment: lab_model
+  model: mistral:7b
+  collectionName: Error_handling_staging
+
+resources:
+  limits:
+    cpu: 2
+    memory: 4Gi
+  requests:
+    cpu: 1
+    memory: 2Gi
+
+autoscaling:
+  enabled: false
+
+monitoring:
+  enabled: false
+
+logging:
+  level: INFO

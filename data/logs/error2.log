@@ -1,0 +1,303 @@
+❯ flwr run . --stream
+Loading project configuration...
+Success
+Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+context: Context(run_id=14732158439537220569, node_id=0, node_config={}, state=RecordDict(
+  array_records={},
+  metric_records={},
+  config_records={}
+), run_config={'num_server_rounds': 3, 'client_selection_method': 'customPercentageSlidingWindow', 'aggregation_method': 'default', 'debug': True})
+INFO :      Run configuration:
+{'aggregation_method': 'default',
+ 'client_selection_method': 'customPercentageSlidingWindow',
+ 'debug': True,
+ 'num_server_rounds': 3}
+INFO :      Run ID: 14732158439537220569
+INFO :      Node ID: 0
+INFO :      Workspace directory: /home/jobradovic/repo/glab/ehea-MVD/MVD
+INFO :      All configs loaded successfully.
+FlaasConfigs
+workspaceRoot         = /home/jobradovic/repo/glab/ehea-MVD/MVD
+pyprojectPath         = /home/jobradovic/repo/glab/ehea-MVD/MVD/pyproject.toml
+federationSettingPath = /home/jobradovic/repo/glab/ehea-MVD/MVD/MVD/configs/federationConfig.yml
+partitionsPath        = /home/jobradovic/repo/glab/ehea-MVD/MVD/MVD/data/partitions)
+FlwrAppConfig         = True
+DatasetConfig         = True
+DatasetMetadata       = True
+ModelConfig           = True
+TrainingConfig        = True
+PreprocessConfig      = True
+
+INFO :      Partitioning settings are valid. Minimum samples per client: 5
+INFO :
+Partitions          : 3
+Dataset dir         : /home/jobradovic/datasets/MICCAI_FETS2022, dir exists: True
+csv_path            : /home/jobradovic/datasets/MICCAI_FETS2022/MICCAI_FETS2022_TrainingData.csv path exists: True
+Random state        : None
+INFO :      original data size: 1251
+sampled data size: 63 with 5.0% of total dataset
+Sanity check % dataRatio x 100 / dataset size: 1.0
+INFO :      Original Dataset  : <bound method DataFrame.info of            SubjectID                                                 t1  ...                                              flair                                              label
+0     FeTS2022_01062  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1     FeTS2022_00807  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+2     FeTS2022_01016  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+3     FeTS2022_01534  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+4     FeTS2022_01434  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+...              ...                                                ...  ...                                                ...                                                ...
+1246  FeTS2022_01147  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1247  FeTS2022_00282  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1248  FeTS2022_00376  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1249  FeTS2022_01484  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1250  FeTS2022_01249  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+
+[1251 rows x 6 columns]>
+Sampled Dataset   : <bound method DataFrame.info of            SubjectID                                                 t1  ...                                              flair                                              label
+643   FeTS2022_01591  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+511   FeTS2022_01358  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1248  FeTS2022_00376  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+223   FeTS2022_00016  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+544   FeTS2022_01556  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+...              ...                                                ...  ...                                                ...                                                ...
+724   FeTS2022_00162  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+1016  FeTS2022_00334  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+887   FeTS2022_01463  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+645   FeTS2022_01578  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+186   FeTS2022_01068  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  ...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...  /home/jobradovic/datasets/MICCAI_FETS2022/MICC...
+
+[63 rows x 6 columns]>
+
+INFO :      Random state: None
+INFO :      Using Gaussian distribution with 3 clients
+INFO :      Gaussian Mean: 7.0, StdDev: 30
+INFO :      Collab distributions:
+[0.18920614 0.25527297 0.55552089]
+INFO :      Collab distribution sum: 1
+INFO :      Collab distributions before max val addition:[ 9 12 26]
+
+INFO :      Collab distributions before minSamples:[ 9 12 27]
+
+INFO :      Collab distributions after minSamples:[14 17 32]
+
+INFO :      Processed 1:
+INFO :      Train: (11 rows) assigned range (0, 11)
+INFO :      Val:   (3 rows) assigned range (11, 14)
+INFO :      Next global_start_index will be: 14
+INFO :      Processed 2:
+INFO :      Train: (14 rows) assigned range (14, 28)
+INFO :      Val:   (3 rows) assigned range (28, 31)
+INFO :      Next global_start_index will be: 31
+INFO :      Processed 3:
+INFO :      Train: (26 rows) assigned range (31, 57)
+INFO :      Val:   (6 rows) assigned range (57, 63)
+INFO :      Next global_start_index will be: 63
+INFO :      PARTITION INDEXES:
+{1: {'train': (0, 11), 'val': (11, 14)},
+ 2: {'train': (14, 28), 'val': (28, 31)},
+ 3: {'train': (31, 57), 'val': (57, 63)}}
+INFO :      Starting Flower ServerApp, config: num_rounds=3, no round_timeout
+INFO :
+INFO :      [INIT]
+INFO :      [FlaasStrategy]: Updating client IDs for client selection strategy
+INFO :      CLIENTPARTITION ID UPDATE:
+{'12900991612391684768': {'train': (31, 57), 'val': (57, 63)},
+ '16371219371381483254': {'train': (0, 11), 'val': (11, 14)},
+ '487316769771763734': {'train': (14, 28), 'val': (28, 31)}}
+✅ Found CUDA device(s).
+
+--- Device 0 ---
+  Name: NVIDIA GeForce RTX 4070 Ti SUPER
+  Compute Capability: 8.9
+  Total Memory: 15.57 GB
+INFO :      [Server|FlaasStrategy]: model UNet loaded from MVD.src.models
+INFO :      [FlaasStrategy]: Initial global parameters loaded from UNet with 77 parameters.
+INFO :      Using initial global parameters provided by strategy
+INFO :      Starting evaluation of initial global parameters
+INFO :      [FlaasStrategy]: Evaluate() called for round 0
+INFO :      Evaluation returned no results (`None`)
+INFO :
+INFO :      [ROUND 1]
+[FlaasStrategy]: Configure_fit() called for round 1
+ERROR :     ServerApp thread raised an exception: Not all values are of valid type. Expected `typing.Union[int, float, str, bytes, bool, list[int], list[float], list[str], list[bytes], list[bool]]` but `<class 'dict'>` was passed.
+ERROR :     Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 268, in server_th_with_start_checks
+    updated_context = _run(
+                      ^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/run_serverapp.py", line 62, in run
+    server_app(grid=grid, context=context)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server_app.py", line 166, in __call__
+    start_grid(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/compat/app.py", line 90, in start_grid
+    hist = run_fl(
+           ^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server.py", line 492, in run_fl
+    hist, elapsed_time = server.fit(
+                         ^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server.py", line 115, in fit
+    res_fit = self.fit_round(
+              ^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server.py", line 217, in fit_round
+    client_instructions = self.strategy.configure_fit(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/repo/glab/ehea-MVD/MVD/MVD/saflaas/flaasStrategy.py", line 178, in configure_fit
+    trainCfg['train_cfg']        = ConfigRecord(FlaasConfigs.get_training_cfg(asDict=True))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/configrecord.py", line 130, in __init__
+    self[k] = config_dict[k]
+    ~~~~^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/typeddict.py", line 39, in __setitem__
+    cast(Callable[[V], None], self.__dict__["_check_value_fn"])(value)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/configrecord.py", line 68, in _check_value
+    is_valid(value)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/configrecord.py", line 46, in is_valid
+    raise TypeError(
+TypeError: Not all values are of valid type. Expected `typing.Union[int, float, str, bytes, bool, list[int], list[float], list[str], list[bytes], list[bool]]` but `<class 'dict'>` was passed.
+
+Exception in thread Thread-1 (server_th_with_start_checks):
+Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 268, in server_th_with_start_checks
+    updated_context = _run(
+                      ^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/run_serverapp.py", line 62, in run
+    server_app(grid=grid, context=context)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server_app.py", line 166, in __call__
+    start_grid(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/compat/app.py", line 90, in start_grid
+    hist = run_fl(
+           ^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server.py", line 492, in run_fl
+    hist, elapsed_time = server.fit(
+                         ^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server.py", line 115, in fit
+    res_fit = self.fit_round(
+              ^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/server.py", line 217, in fit_round
+    client_instructions = self.strategy.configure_fit(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/repo/glab/ehea-MVD/MVD/MVD/saflaas/flaasStrategy.py", line 178, in configure_fit
+    trainCfg['train_cfg']        = ConfigRecord(FlaasConfigs.get_training_cfg(asDict=True))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/configrecord.py", line 130, in __init__
+    self[k] = config_dict[k]
+    ~~~~^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/typeddict.py", line 39, in __setitem__
+    cast(Callable[[V], None], self.__dict__["_check_value_fn"])(value)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/configrecord.py", line 68, in _check_value
+    is_valid(value)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/common/record/configrecord.py", line 46, in is_valid
+    raise TypeError(
+TypeError: Not all values are of valid type. Expected `typing.Union[int, float, str, bytes, bool, list[int], list[float], list[str], list[bytes], list[bool]]` but `<class 'dict'>` was passed.
+^CERROR :     An exception occurred !! cannot access local variable 'backend' where it is not associated with a value
+ERROR :     Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 188, in run_api
+    backend = backend_fn()
+              ^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 338, in backend_fn
+    return backend_type(backend_config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/backend/raybackend.py", line 52, in __init__
+    self.init_ray(backend_config)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/backend/raybackend.py", line 113, in init_ray
+    ray.init(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/client_mode_hook.py", line 103, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/worker.py", line 1664, in init
+    _global_node = ray._private.node.Node(
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 333, in __init__
+    self.start_head_processes()
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 1351, in start_head_processes
+    assert self.get_gcs_client() is not None
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 712, in get_gcs_client
+    self._init_gcs_client()
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 728, in _init_gcs_client
+    client = GcsClient(
+             ^^^^^^^^^^
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 370, in _main_loop
+    vce.start_vce(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 390, in start_vce
+    raise ex
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 371, in start_vce
+    run_api(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 248, in run_api
+    backend.terminate()
+    ^^^^^^^
+UnboundLocalError: cannot access local variable 'backend' where it is not associated with a value
+
+Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 188, in run_api
+    backend = backend_fn()
+              ^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 338, in backend_fn
+    return backend_type(backend_config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/backend/raybackend.py", line 52, in __init__
+    self.init_ray(backend_config)
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/backend/raybackend.py", line 113, in init_ray
+    ray.init(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/client_mode_hook.py", line 103, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/worker.py", line 1664, in init
+    _global_node = ray._private.node.Node(
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 333, in __init__
+    self.start_head_processes()
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 1351, in start_head_processes
+    assert self.get_gcs_client() is not None
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 712, in get_gcs_client
+    self._init_gcs_client()
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/ray/_private/node.py", line 728, in _init_gcs_client
+    client = GcsClient(
+             ^^^^^^^^^^
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 370, in _main_loop
+    vce.start_vce(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 390, in start_vce
+    raise ex
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 371, in start_vce
+    run_api(
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/server/superlink/fleet/vce/vce_api.py", line 248, in run_api
+    backend.terminate()
+    ^^^^^^^
+UnboundLocalError: cannot access local variable 'backend' where it is not associated with a value
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 393, in _main_loop
+    raise RuntimeError("An error was encountered. Ending simulation.") from ex
+RuntimeError: An error was encountered. Ending simulation.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/jobradovic/miniconda3/envs/flwr/bin/flower-simulation", line 8, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 131, in run_simulation_from_cli
+    _ = _run_simulation(
+        ^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 510, in _run_simulation
+    updated_context = _main_loop(*args)
+                      ^^^^^^^^^^^^^^^^^
+  File "/home/jobradovic/miniconda3/envs/flwr/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 408, in _main_loop
+    raise RuntimeError("Exception in ServerApp thread")
+RuntimeError: Exception in ServerApp thread
+
+Aborted.

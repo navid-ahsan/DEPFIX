@@ -1,0 +1,30 @@
+# Core RAG Dependencies
+toml==0.10.2
+ollama==0.6.1
+aiofiles==24.1.0
+langchain==1.2.0
+langchain-community==0.4.1
+langchain-core==1.2.5
+langchain-ollama==1.0.1
+langchain-postgres==0.0.17
+langchain-text-splitters==1.1.0
+psycopg2-binary==2.9.11
+pgvector==0.4.2
+pydantic==2.12.5
+
+# Document Processing
+PyPDF2==3.0.1
+beautifulsoup4==4.12.3
+setuptools==70.0.0
+
+# API & Server
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic-settings==2.0.3
+
+# Evaluation & Testing
+ragas==0.4.2
+datasets==4.4.2
+
+# Development & Utils
+ipython==8.30.0
