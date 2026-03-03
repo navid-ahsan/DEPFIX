@@ -1,5 +1,6 @@
 import NextAuth, { type NextAuthOptions } from 'next-auth';
 import GitHubProvider from 'next-auth/providers/github';
+import { getServerSession } from 'next-auth/next';
 
 const authOptions: NextAuthOptions = {
   providers: [
@@ -27,4 +28,8 @@ const authOptions: NextAuthOptions = {
 };
 
 const handler = NextAuth(authOptions);
+
+// Export auth function for use in server components
+export const auth = () => getServerSession(authOptions);
+
 export { handler as GET, handler as POST };
