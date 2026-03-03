@@ -196,6 +196,41 @@ class VectorStore(Base):
         return f"<VectorStore {self.collection_name}>"
 
 
+class SetupStatus(Base):
+    """User setup progress tracking."""
+
+    __tablename__ = "setup_status"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, unique=True)
+
+    # Phase 1: Dependencies
+    selected_dependencies = Column(JSON, nullable=True)  # List of dependency names
+    phase1_completed = Column(Boolean, default=False)
+
+    # Phase 2: Embeddings & Vector DB
+    phase2_completed = Column(Boolean, default=False)
+    embeddings_status = Column(String(50), default="pending")  # pending, in_progress, completed
+
+    # Phase 3: GitHub/GitLab Connection
+    github_gitlab_connected = Column(Boolean, default=False)
+    phase3_completed = Column(Boolean, default=False)
+
+    # Phase 4: RAG Ready
+    rag_ready = Column(Boolean, default=False)
+
+    # Error tracking
+    last_error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", backref="setup_status")
+
+    def __repr__(self) -> str:
+        return f"<SetupStatus {self.user_id[:8]}>"
+
+
 class APIKey(Base):
     """API key model for external integrations."""
 

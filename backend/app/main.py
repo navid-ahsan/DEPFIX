@@ -29,6 +29,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Vector DB: {settings.vector_db.type}")
     logger.info(f"LLM: {settings.llm.type} at {settings.llm.ollama_host}")
+    
+    # Initialize database
+    try:
+        from .database import init_db
+        init_db()
+        logger.info("✓ Database initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
 
     yield
 
@@ -95,12 +103,13 @@ def create_app() -> FastAPI:
         }
 
     # Include routers
-    from .api import logs, dependencies, rag, integrations, analysis
+    from .api import logs, dependencies, rag, integrations, analysis, setup
     app.include_router(logs.router)
     app.include_router(dependencies.router)
     app.include_router(rag.router)
     app.include_router(integrations.router)
     app.include_router(analysis.router)
+    app.include_router(setup.router)
 
     logger.info(f"✅ FastAPI app created with {len(app.routes)} routes")
     return app

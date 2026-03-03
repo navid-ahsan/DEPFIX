@@ -22,14 +22,14 @@ export default async function Home() {
         
         <div className="space-y-4 mb-8">
           <Link
-            href="/auth/github"
+            href="/auth/signin"
             className="inline-block bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-8 rounded-lg transition duration-200 transform hover:scale-105 w-full sm:w-auto"
           >
-            Sign in with GitHub
+            Get Started
           </Link>
           
           <p className="text-sm text-gray-600">
-            Connect your GitHub account to analyze your CI/CD logs and get AI-powered fixes
+            Sign in with GitHub or use a test account
           </p>
         </div>
 
