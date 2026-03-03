@@ -12,14 +12,16 @@ export default function GitHubAuth() {
   const handleSignIn = async () => {
     setLoading(true);
     try {
-      const result = await signIn('github', { redirect: false });
+      // Use callbackUrl to redirect to dashboard after successful auth
+      const result = await signIn('github', {
+        redirect: true,
+        callbackUrl: '/dashboard'
+      });
       
+      // This code only runs if redirect: false was used
       if (result?.error) {
         setError('Authentication failed. Please try again.');
         setLoading(false);
-      } else if (result?.ok) {
-        // Redirect to dashboard after successful auth
-        router.push('/dashboard');
       }
     } catch (err) {
       setError('An error occurred. Please try again.');
