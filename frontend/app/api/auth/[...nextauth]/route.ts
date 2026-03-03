@@ -1,7 +1,7 @@
-import NextAuth from 'next-auth';
+import NextAuth, { type NextAuthOptions } from 'next-auth';
 import GitHubProvider from 'next-auth/providers/github';
 
-export const authOptions = {
+const authOptions: NextAuthOptions = {
   providers: [
     GitHubProvider({
       clientId: process.env.GITHUB_ID || '',
@@ -9,7 +9,7 @@ export const authOptions = {
     }),
   ],
   pages: {
-    signIn: '/auth/signin',
+    signIn: '/auth/github',
     error: '/auth/error',
   },
   callbacks: {
@@ -20,7 +20,7 @@ export const authOptions = {
       return token;
     },
     async session({ session, token }: any) {
-      session.accessToken = token.accessToken;
+      (session as any).accessToken = token.accessToken;
       return session;
     },
   },
