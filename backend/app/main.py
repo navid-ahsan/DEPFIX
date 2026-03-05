@@ -103,13 +103,14 @@ def create_app() -> FastAPI:
         }
 
     # Include routers
-    from .api import logs, dependencies, rag, integrations, analysis, setup
+    from .api import logs, dependencies, rag, integrations, analysis, setup, embedding
     app.include_router(logs.router)
     app.include_router(dependencies.router)
     app.include_router(rag.router)
     app.include_router(integrations.router)
     app.include_router(analysis.router)
     app.include_router(setup.router)
+    app.include_router(embedding.router)
 
     logger.info(f"✅ FastAPI app created with {len(app.routes)} routes")
     return app
