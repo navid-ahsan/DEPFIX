@@ -1,6 +1,6 @@
 """Embedding and indexing API endpoints."""
 
-from typing import List
+from typing import List, Dict, Union
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -19,7 +19,7 @@ class StartEmbeddingRequest(BaseModel):
 
 class EmbeddingStatusResponse(BaseModel):
     status: str  # pending, in_progress, completed, failed
-    dependencies: dict
+    dependencies: Union[Dict, List]  # Can be dict or list
     progress_percent: int
 
 
@@ -87,24 +87,37 @@ async def get_embedding_status(
 ):
     """Get current embedding status."""
     user_id = "test-user-123"  # TODO: Get from auth context
-    
+
     setup = db.query(SetupStatus).filter(SetupStatus.user_id == user_id).first()
-    
+
     if not setup:
         return {
             "status": "pending",
-            "dependencies": {},
+            "dependencies": [],
             "progress_percent": 0,
         }
-    
-    # Calculate progress
-    selected_count = len(setup.selected_dependencies) if setup.selected_dependencies else 0
-    completed_count = 1 if setup.phase2_completed else 0
-    progress = int((completed_count / selected_count * 100)) if selected_count > 0 else 0
-    
+
+    selected_deps = setup.selected_dependencies or []
+    cur_status = setup.embeddings_status or "pending"
+
+    # If already marked complete, always report 100%
+    if cur_status == "completed":
+        progress = 100
+    elif not selected_deps:
+        progress = 0
+    else:
+        # Count how many selected deps actually have vectors stored in pgvector
+        try:
+            from backend.app.services.embedding_service import PGVectorStorage
+            pg = PGVectorStorage()
+            embedded = sum(1 for dep in selected_deps if pg.has_embeddings(dep))
+            progress = int(embedded / len(selected_deps) * 100)
+        except Exception:
+            progress = 0
+
     return {
-        "status": setup.embeddings_status or "pending",
-        "dependencies": setup.selected_dependencies or [],
+        "status": cur_status,
+        "dependencies": selected_deps,
         "progress_percent": progress,
     }
 

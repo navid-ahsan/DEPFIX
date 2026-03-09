@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import Navbar from '../../components/Navbar';
 
 interface EmbeddingStatus {
   status: string;
@@ -111,10 +112,10 @@ export default function EmbeddingSetup() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen depfix-grid-bg flex items-center justify-center" style={{ background: '#060810' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <div className="w-10 h-10 rounded-full border-2 border-transparent animate-spin mx-auto mb-5" style={{ borderTopColor: '#00d4ff' }} />
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", color: '#607898', fontSize: '11px', letterSpacing: '4px' }}>LOADING...</p>
         </div>
       </div>
     );
@@ -124,131 +125,125 @@ export default function EmbeddingSetup() {
   const isComplete = embeddingStatus?.status === 'completed';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Phase 2: Embedding & Vector DB
-            </h1>
-            <p className="text-gray-600">
-              Converting documentation into AI embeddings for semantic search
-            </p>
-          </div>
+    <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
+      <Navbar />
+      <div className="max-w-4xl mx-auto px-4 py-10">
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-              {error}
+        {/* Header */}
+        <div className="mb-8">
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '4px', color: '#607898' }}>SETUP / PHASE 2</p>
+          <h1 style={{ fontFamily: "'Orbitron', monospace", fontWeight: 700, fontSize: '1.6rem', color: '#dce8f8', marginTop: '6px' }}>
+            Embedding &amp; Vector DB
+          </h1>
+          <p style={{ fontFamily: "'Exo 2', sans-serif", fontSize: '14px', color: '#8cb4d4', marginTop: '6px', fontWeight: 300 }}>
+            Converting documentation into AI embeddings for semantic search.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-3 rounded text-xs" style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.3)', color: '#ff3c3c', fontFamily: "'Share Tech Mono', monospace" }}>
+            {error}
+          </div>
+        )}
+
+        {/* Selected deps */}
+        <div className="mb-6 p-4 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.1)' }}>
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '3px', color: '#00d4ff', marginBottom: '8px' }}>SELECTED PACKAGES</p>
+          <p className="text-sm" style={{ color: '#dce8f8' }}>{selectedDeps.join(', ')}</p>
+        </div>
+
+        {!isEmbeddingStarted ? (
+          <div className="rounded-lg p-6" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.1)' }}>
+            <p className="text-sm mb-5" style={{ color: '#8cb4d4' }}>Click below to start embedding. This will:</p>
+            <div className="space-y-2 mb-8">
+              {['Split documentation into chunks', 'Generate embeddings using Ollama AI', 'Index vectors in the database', 'Prepare for semantic search queries'].map((s, i) => (
+                <p key={i} className="text-xs" style={{ color: '#8cb4d4' }}>
+                  <span style={{ color: '#00d4ff', marginRight: '8px' }}>{'>'}</span>{s}
+                </p>
+              ))}
             </div>
-          )}
-
-          {/* Selected Dependencies */}
-          <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2">Selected Dependencies:</h3>
-            <p className="text-gray-700">{selectedDeps.join(', ')}</p>
+            <button
+              onClick={startEmbedding}
+              disabled={startingEmbedding}
+              className="w-full rounded text-xs transition-all disabled:opacity-40"
+              style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '3px', padding: '13px' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.16)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.08)')}
+            >
+              {startingEmbedding ? 'STARTING...' : 'START EMBEDDING PROCESS'}
+            </button>
           </div>
+        ) : (
+          <div>
+            {/* Progress Bar */}
+            <div className="mb-6 p-5 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.1)' }}>
+              <div className="flex justify-between items-center mb-3">
+                <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '3px', color: '#607898' }}>EMBEDDING PROGRESS</p>
+                <p style={{ fontFamily: "'Orbitron', monospace", fontSize: '14px', fontWeight: 700, color: isComplete ? '#00ff88' : '#00d4ff' }}>
+                  {embeddingStatus?.progress_percent || 0}%
+                </p>
+              </div>
+              <div className="w-full rounded-full h-2" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                <div
+                  className="h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${embeddingStatus?.progress_percent || 0}%`,
+                    background: isComplete ? '#00ff88' : '#00d4ff',
+                    boxShadow: `0 0 8px ${isComplete ? 'rgba(0,255,136,0.5)' : 'rgba(0,212,255,0.5)'}`,
+                  }}
+                />
+              </div>
+            </div>
 
-          {!isEmbeddingStarted ? (
-            <div>
-              <p className="text-gray-600 mb-6">
-                Click the button below to start embedding. This process will:
+            {/* Status */}
+            <div className="mb-6 p-5 rounded-lg text-center" style={{ background: '#0b0f1e', border: `1px solid ${isComplete ? 'rgba(0,255,136,0.2)' : 'rgba(0,212,255,0.1)'}` }}>
+              {isComplete ? (
+                <>
+                  <p className="font-semibold mb-1" style={{ color: '#00ff88' }}>✓ Embedding Complete!</p>
+                  <p className="text-xs" style={{ color: '#8cb4d4' }}>{selectedDeps.length} package(s) embedded and indexed</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-7 h-7 rounded-full border-2 border-transparent animate-spin mx-auto mb-3" style={{ borderTopColor: '#00d4ff' }} />
+                  <p className="text-sm font-semibold" style={{ color: '#dce8f8' }}>Embedding in progress...</p>
+                  <p className="text-xs mt-1" style={{ color: '#607898' }}>This may take a few minutes</p>
+                </>
+              )}
+            </div>
+
+            {/* Details */}
+            <div className="p-4 rounded-lg mb-6" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.07)' }}>
+              <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '3px', color: '#607898', marginBottom: '8px' }}>
+                STATUS: <span style={{ color: '#00d4ff' }}>{embeddingStatus?.status?.toUpperCase()}</span>
               </p>
-              <ul className="list-disc list-inside text-gray-600 mb-8 space-y-2">
-                <li>Split documentation into chunks</li>
-                <li>Generate embeddings using Ollama AI</li>
-                <li>Index vectors in the database</li>
-                <li>Prepare for semantic search queries</li>
-              </ul>
+              {embeddingStatus?.dependencies?.map((dep: string) => (
+                <p key={dep} className="text-xs" style={{ color: '#8cb4d4' }}>• {dep}</p>
+              ))}
+            </div>
 
+            {/* Navigation */}
+            <div className="flex gap-4 pt-4" style={{ borderTop: '1px solid rgba(0,212,255,0.08)' }}>
+              {isComplete && (
+                <button
+                  onClick={handleComplete}
+                  className="flex-1 rounded text-xs transition-all"
+                  style={{ background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.4)', color: '#00ff88', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '12px' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,255,136,0.16)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,255,136,0.08)')}
+                >
+                  CONTINUE TO PHASE 3 →
+                </button>
+              )}
               <button
-                onClick={startEmbedding}
-                disabled={startingEmbedding}
-                className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition"
+                onClick={() => router.push('/dashboard')}
+                className="rounded text-xs transition-all"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', color: '#607898', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '12px 20px' }}
               >
-                {startingEmbedding ? 'Starting...' : 'Start Embedding Process'}
+                SKIP TO DASHBOARD
               </button>
             </div>
-          ) : (
-            <div>
-              {/* Progress Bar */}
-              <div className="mb-8">
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-sm font-semibold text-gray-700">Progress</p>
-                  <p className="text-sm text-gray-600">{embeddingStatus?.progress_percent || 0}%</p>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-4">
-                  <div
-                    className={`h-4 rounded-full transition-all duration-300 ${
-                      isComplete ? 'bg-green-600' : 'bg-blue-600'
-                    }`}
-                    style={{
-                      width: `${embeddingStatus?.progress_percent || 0}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Status Message */}
-              <div className="mb-8 p-4 bg-gray-50 rounded-lg">
-                {isComplete ? (
-                  <div className="text-center">
-                    <p className="text-lg font-semibold text-green-600 mb-2">
-                      ✓ Embedding Complete!
-                    </p>
-                    <p className="text-gray-600">
-                      {selectedDeps.length} dependency(ies) embedded and indexed
-                    </p>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-3"></div>
-                    <p className="text-gray-700 font-semibold">
-                      Embedding in progress...
-                    </p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      This may take a few minutes
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Details */}
-              <div className="p-4 bg-gray-50 rounded-lg mb-8">
-                <p className="text-sm font-semibold text-gray-700 mb-2">Status: {embeddingStatus?.status}</p>
-                {embeddingStatus?.dependencies && (
-                  <div className="space-y-1">
-                    {embeddingStatus.dependencies.map((dep: string) => (
-                      <p key={dep} className="text-sm text-gray-600">
-                        • {dep}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Navigation Buttons */}
-              <div className="flex gap-4">
-                {isComplete && (
-                  <button
-                    onClick={handleComplete}
-                    className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition"
-                  >
-                    Continue to Phase 3: GitHub Connection
-                  </button>
-                )}
-                <button
-                  onClick={() => router.push('/dashboard')}
-                  className={`${
-                    isComplete ? 'flex-1' : 'w-full'
-                  } px-6 py-3 bg-gray-400 hover:bg-gray-500 text-white font-semibold rounded-lg transition`}
-                >
-                  Skip to Dashboard
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

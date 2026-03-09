@@ -1,16 +1,18 @@
+version: '3.8'
+
 services:
   # PostgreSQL Vector Database
   pgvector:
     image: ankane/pgvector:latest
     container_name: pgvector
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password123}
-      POSTGRES_DB: ${DB_NAME:-vector_db}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: vector_db
     volumes:
       - pgvector_data:/var/lib/postgresql/data
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     networks:
       - rag-net
     healthcheck:
@@ -18,10 +20,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
     restart: unless-stopped
-    labels:
-      - "com.rag.service=database"
 
   # Ollama LLM & Embeddings Service
   ollama:
@@ -30,11 +29,10 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_KEEP_ALIVE=-1
-      - OLLAMA_MODELS=/root/.ollama/models
     volumes:
       - ollama_data:/root/.ollama
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - "11434:11434"
     networks:
       - rag-net
     healthcheck:
@@ -42,12 +40,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
     restart: unless-stopped
-    labels:
-      - "com.rag.service=llm"
 
-  # FastAPI Backend Service
+  # FastAPI Backend
   backend:
     build:
       context: .
@@ -61,16 +56,13 @@ services:
         condition: service_healthy
     environment:
       PYTHONUNBUFFERED: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
-      DATABASE_URL: postgresql+psycopg2://${DB_USER:-postgres}:${DB_PASSWORD:-password123}@pgvector:5432/${DB_NAME:-vector_db}
+      DATABASE_URL: postgresql+psycopg2://postgres:password123@pgvector:5432/vector_db
       OLLAMA_HOST: http://ollama:11434
-      ENVIRONMENT: docker
-      DEBUG: "false"
     volumes:
       - ./backend:/app/backend
       - ./data:/app/data
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "8000:8000"
     networks:
       - rag-net
     healthcheck:
@@ -78,47 +70,37 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
     command: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
-    labels:
-      - "com.rag.service=backend"
 
-  # Next.js Frontend Service
+  # Next.js Frontend
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    image: rag-frontend:latest
+    image: node:20-alpine
     container_name: rag-frontend
+    working_dir: /app
     depends_on:
       - backend
     environment:
       NEXT_PUBLIC_API_URL: http://backend:8000
       NODE_ENV: production
+    volumes:
+      - ./frontend:/app
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "3000:3000"
     networks:
       - rag-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+    command: sh -c "npm ci --omit=dev && npm start"
     restart: unless-stopped
-    labels:
-      - "com.rag.service=frontend"
 
 networks:
   rag-net:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
   pgvector_data:
-    driver: local
   ollama_data:
-    driver: local

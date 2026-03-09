@@ -61,7 +61,4 @@ const authOptions: NextAuthOptions = {
 
 const handler = NextAuth(authOptions);
 
-// Export auth function for use in server components
-export const auth = () => getServerSession(authOptions);
-
 export { handler as GET, handler as POST };

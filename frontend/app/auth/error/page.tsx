@@ -2,10 +2,15 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 export default function AuthError() {
   const searchParams = useSearchParams();
-  const error = searchParams.get('error');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(searchParams.get('error'));
+  }, [searchParams]);
 
   const errorMessages: { [key: string]: string } = {
     OAuthAccountNotLinked: 'This email is already registered with another provider',

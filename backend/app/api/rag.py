@@ -1,14 +1,275 @@
 """RAG query and evaluation API endpoints."""
 
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
+from backend.app.database import get_db
+from backend.app.services.rag_service import RAGEngine
+from backend.app.models.database import Query, Log
 from backend.app.agents import OrchestratorAgent
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/rag", tags=["rag"])
+router = APIRouter(prefix="/api/v1/rag", tags=["rag"])
+
+# Hardcoded user for now (TODO: Get from NextAuth session)
+CURRENT_USER_ID = "test-user-123"
+
+
+# ==================== REQUEST MODELS ====================
+
+class AnalyzeErrorLogRequest(BaseModel):
+    """Request model for error log analysis."""
+    log_id: str
+    dependencies: Optional[List[str]] = None
+
+
+# ==================== PHASE 4: ERROR LOG ANALYSIS & RAG ====================
+
+@router.post("/analyze-error-log")
+async def analyze_error_log(
+    request: AnalyzeErrorLogRequest,
+    db: Session = Depends(get_db)
+):
+    """Analyze error log and generate fix suggestions using RAG.
+    
+    Args:
+        request: AnalyzeErrorLogRequest with log_id and optional dependencies
+        db: Database session
+    
+    Returns:
+        Generated fix suggestions with retrieved documentation context
+    """
+    try:
+        # Verify log exists and belongs to user
+        log = db.query(Log).filter(
+            Log.id == request.log_id,
+            Log.user_id == CURRENT_USER_ID
+        ).first()
+        
+        if not log:
+            raise HTTPException(status_code=404, detail="Log not found")
+        
+        if not log.is_processed:
+            raise HTTPException(status_code=400, detail="Log not yet processed/analyzed")
+        
+        # Run RAG analysis (async — Ollama calls are run in thread pool)
+        engine = RAGEngine(db)
+        result = await engine.analyze_error_and_generate_fix(
+            log_id=request.log_id,
+            user_id=CURRENT_USER_ID,
+            selected_dependencies=request.dependencies
+        )
+        
+        logger.info(f"✓ RAG analysis complete for log {request.log_id}")
+        
+        return {
+            "status": "success",
+            "data": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing log: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/query/{query_id}")
+async def get_query_result(
+    query_id: str,
+    db: Session = Depends(get_db)
+):
+    """Retrieve RAG query result and fix suggestions.
+    
+    Args:
+        query_id: ID of query to retrieve
+    
+    Returns:
+        Query details including fix suggestions and metadata
+    """
+    try:
+        query = db.query(Query).filter(
+            Query.id == query_id,
+            Query.user_id == CURRENT_USER_ID
+        ).first()
+        
+        if not query:
+            raise HTTPException(status_code=404, detail="Query not found")
+        
+        log = db.query(Log).filter(Log.id == query.log_id).first()
+        
+        return {
+            "status": "success",
+            "data": {
+                "query_id": query.id,
+                "log_id": query.log_id,
+                "log_filename": log.filename if log else None,
+                "created_at": query.created_at.isoformat(),
+                "query_intent": query.query_intent,
+                "generated_response": query.generated_response,
+                "suggested_fixes": query.suggested_fixes,
+                "is_response_approved": query.is_response_approved,
+                "is_evaluated": query.is_evaluated,
+                "evaluation_score": query.evaluation_score
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/queries")
+async def list_user_queries(
+    log_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """List all RAG queries for current user.
+    
+    Args:
+        log_id: Optional filter by specific log
+    
+    Returns:
+        List of queries with summary information
+    """
+    try:
+        query_builder = db.query(Query).filter(Query.user_id == CURRENT_USER_ID)
+        
+        if log_id:
+            query_builder = query_builder.filter(Query.log_id == log_id)
+        
+        queries = query_builder.order_by(Query.created_at.desc()).all()
+        
+        return {
+            "status": "success",
+            "count": len(queries),
+            "data": [
+                {
+                    "query_id": q.id,
+                    "log_id": q.log_id,
+                    "created_at": q.created_at.isoformat(),
+                    "query_intent": q.query_intent,
+                    "has_response": q.generated_response is not None,
+                    "is_approved": q.is_response_approved
+                }
+                for q in queries
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing queries: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/approve-fix/{query_id}")
+async def approve_fix(
+    query_id: str,
+    fix_index: int = 0,
+    feedback: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Approve a suggested fix.
+    
+    Args:
+        query_id: ID of query with fix
+        fix_index: Index of fix in suggested_fixes list
+        feedback: Optional user feedback
+    
+    Returns:
+        Updated query object
+    """
+    try:
+        query = db.query(Query).filter(
+            Query.id == query_id,
+            Query.user_id == CURRENT_USER_ID
+        ).first()
+        
+        if not query:
+            raise HTTPException(status_code=404, detail="Query not found")
+        
+        if not query.suggested_fixes or fix_index >= len(query.suggested_fixes):
+            raise HTTPException(status_code=400, detail="Invalid fix index")
+        
+        # Mark as approved
+        query.is_response_approved = True
+        query.accepted_fix = query.suggested_fixes[fix_index]
+        
+        # Store evaluation if provided
+        if feedback:
+            query.evaluation_feedback = feedback
+            query.is_evaluated = True
+        
+        db.commit()
+        
+        logger.info(f"✓ Fix approved for query {query_id}")
+        
+        return {
+            "status": "success",
+            "message": "Fix approved",
+            "query_id": query.id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error approving fix: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reject-fix/{query_id}")
+async def reject_fix(
+    query_id: str,
+    reason: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Reject a suggested fix.
+    
+    Args:
+        query_id: ID of query with fix
+        reason: Reason for rejection
+    
+    Returns:
+        Updated query object
+    """
+    try:
+        query = db.query(Query).filter(
+            Query.id == query_id,
+            Query.user_id == CURRENT_USER_ID
+        ).first()
+        
+        if not query:
+            raise HTTPException(status_code=404, detail="Query not found")
+        
+        query.is_response_approved = False
+        
+        if reason:
+            query.evaluation_feedback = reason
+            query.is_evaluated = True
+        
+        db.commit()
+        
+        logger.info(f"✓ Fix rejected for query {query_id}")
+        
+        return {
+            "status": "success",
+            "message": "Fix rejected",
+            "query_id": query.id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting fix: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== EXISTING RAG ENDPOINTS ====================
 
 
 class QueryRequest:

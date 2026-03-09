@@ -4,15 +4,27 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import Navbar from '../../components/Navbar';
+
+interface ErrorLog {
+  id: string;
+  filename: string;
+  file_format: string;
+  error_count: number;
+  primary_error_type?: string;
+  is_processed: boolean;
+  created_at: string;
+}
 
 export default function GitHubConnection() {
   const router = useRouter();
   const { data: session, status } = useSession();
-  const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [gistUrl, setGistUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [uploadedLogs, setUploadedLogs] = useState<ErrorLog[]>([]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -20,155 +32,245 @@ export default function GitHubConnection() {
     }
 
     if (status === 'authenticated') {
-      checkConnectionStatus();
+      fetchUploadedLogs();
+      setLoading(false);
     }
   }, [status, router]);
 
-  const checkConnectionStatus = async () => {
+  const fetchUploadedLogs = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/api/v1/setup/status', {
+      const response = await axios.get('http://localhost:8000/api/v1/logs', {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
       });
-      setConnected(response.data.github_gitlab_connected);
-      setLoading(false);
+      setUploadedLogs(response.data);
     } catch (err) {
-      setLoading(false);
+      console.error('Failed to fetch logs:', err);
     }
   };
 
-  const handleGitHubConnect = async () => {
-    setConnecting(true);
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileUpload(files[0]);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFileUpload(e.target.files[0]);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    setSuccess(null);
+
     try {
-      // This would redirect to GitHub OAuth or accept a Gist URL
-      // For now, just mark as connected
-      setConnected(true);
-      setError(null);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post(
+        'http://localhost:8000/api/v1/logs/upload',
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${session?.accessToken}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      setSuccess(`✓ Uploaded: ${file.name} (${response.data.error_count} errors found)`);
+      setUploading(false);
+      await fetchUploadedLogs();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to connect');
+      const errorMsg = err.response?.data?.detail || 'Failed to upload file';
+      setError(errorMsg);
+      setUploading(false);
     }
-    setConnecting(false);
   };
 
-  const handleSkip = () => {
-    router.push('/dashboard');
+  const handleDeleteLog = async (logId: string) => {
+    if (!confirm('Delete this log?')) return;
+
+    try {
+      await axios.delete(`http://localhost:8000/api/v1/logs/${logId}`, {
+        headers: {
+          Authorization: `Bearer ${session?.accessToken}`,
+        },
+      });
+      setSuccess('Log deleted');
+      await fetchUploadedLogs();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to delete log');
+    }
+  };
+
+  const handleAnalyzeLog = (logId: string) => {
+    router.push(`/setup/rag-analysis?log_id=${logId}`);
   };
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen depfix-grid-bg flex items-center justify-center" style={{ background: '#060810' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <div className="w-10 h-10 rounded-full border-2 border-transparent animate-spin mx-auto mb-5" style={{ borderTopColor: '#00d4ff' }} />
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", color: '#607898', fontSize: '11px', letterSpacing: '4px' }}>LOADING...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-lg p-8">
+    <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
+      <Navbar />
+      <div className="max-w-4xl mx-auto px-4 py-10">
+
+        {/* Header */}
+        <div className="mb-8">
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '4px', color: '#607898' }}>SETUP / PHASE 3</p>
+          <h1 style={{ fontFamily: "'Orbitron', monospace", fontWeight: 700, fontSize: '1.6rem', color: '#dce8f8', marginTop: '6px' }}>
+            Upload Error Logs
+          </h1>
+          <p style={{ fontFamily: "'Exo 2', sans-serif", fontSize: '14px', color: '#8cb4d4', marginTop: '6px', fontWeight: 300 }}>
+            Upload CI/CD error logs to get AI-powered fix recommendations.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-5 p-3 rounded text-xs" style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.3)', color: '#ff3c3c', fontFamily: "'Share Tech Mono', monospace" }}>
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-5 p-3 rounded text-xs" style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.3)', color: '#00ff88', fontFamily: "'Share Tech Mono', monospace" }}>
+            {success}
+          </div>
+        )}
+
+        {/* Upload Section */}
+        <div className="mb-8 rounded-lg p-6" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.1)' }}>
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '3px', color: '#607898', marginBottom: '16px' }}>UPLOAD ERROR LOGS</p>
+          <p className="text-xs mb-5" style={{ color: '#8cb4d4' }}>Drag and drop your CI/CD error logs here (.log, .txt, .json)</p>
+
+          <div
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+            className="rounded-lg p-10 text-center transition-all"
+            style={{
+              border: `2px dashed ${dragActive ? 'rgba(0,212,255,0.6)' : 'rgba(0,212,255,0.2)'}`,
+              background: dragActive ? 'rgba(0,212,255,0.04)' : 'transparent',
+            }}
+          >
+            <svg className="mx-auto mb-3" width="40" height="40" stroke="rgba(0,212,255,0.35)" fill="none" viewBox="0 0 48 48">
+              <path d="M28 8H12a4 4 0 00-4 4v20a4 4 0 004 4h24a4 4 0 004-4V20m-12-8v12m0 0l-4-4m4 4l4-4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+
+            <input type="file" id="file-upload" className="hidden" onChange={handleFileSelect} accept=".log,.txt,.json,.jsonl,.csv" disabled={uploading} />
+
+            <label htmlFor="file-upload" className="cursor-pointer block">
+              <p className="text-sm" style={{ color: '#8cb4d4' }}>
+                {uploading ? (
+                  <>
+                    <span className="inline-block w-4 h-4 rounded-full border-2 border-transparent animate-spin mr-2" style={{ borderTopColor: '#00d4ff', verticalAlign: 'middle' }} />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    Drag &amp; drop, or{' '}
+                    <span className="font-semibold" style={{ color: '#00d4ff' }}>click to browse</span>
+                  </>
+                )}
+              </p>
+            </label>
+          </div>
+        </div>
+
+        {/* Uploaded Logs */}
+        {uploadedLogs.length > 0 && (
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Phase 3: Connect GitHub/GitLab
-            </h1>
-            <p className="text-gray-600">
-              Link your GitHub/GitLab account to access CI/CD error logs
+            <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '3px', color: '#607898', marginBottom: '12px' }}>
+              UPLOADED LOGS ({uploadedLogs.length})
             </p>
+            <div className="space-y-3">
+              {uploadedLogs.map((log) => (
+                <div key={log.id} className="rounded-lg p-4 flex items-start justify-between gap-4 transition-all" style={{ background: '#0b0f1e', border: '1px solid rgba(255,60,60,0.12)', borderLeft: '3px solid rgba(255,60,60,0.5)' }}>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm" style={{ color: '#dce8f8' }}>{log.filename}</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#607898' }}>
+                      {log.error_count} errors
+                      {log.primary_error_type && <> · {log.primary_error_type}</>}
+                      {' · '}{log.is_processed ? <span style={{ color: '#00ff88' }}>✓ Analyzed</span> : <span style={{ color: '#ffb700' }}>⏳ Queued</span>}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAnalyzeLog(log.id)}
+                      className="rounded text-xs transition-all"
+                      style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '1px', padding: '6px 14px' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.16)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.08)')}
+                    >
+                      ANALYZE
+                    </button>
+                    <button
+                      onClick={() => handleDeleteLog(log.id)}
+                      className="rounded text-xs transition-all"
+                      style={{ background: 'rgba(255,60,60,0.06)', border: '1px solid rgba(255,60,60,0.25)', color: '#ff3c3c', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '1px', padding: '6px 14px' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,60,60,0.12)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,60,60,0.06)')}
+                    >
+                      DELETE
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+        )}
 
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-              {error}
-            </div>
-          )}
-
-          {connected && (
-            <div className="mb-8 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-800 font-semibold">✓ GitHub connected successfully!</p>
-            </div>
-          )}
-
-          <div className="space-y-6 mb-8">
-            {/* Option 1: GitHub OAuth */}
-            <div className="p-6 border-2 border-gray-200 rounded-lg hover:border-blue-300 transition">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Option 1: Connect with GitHub OAuth
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Authorize our app to access your GitHub repositories and CI/CD workflows.
-                This gives us access to your error logs and allows for direct PR creation.
+        {/* What happens next */}
+        <div className="mb-8 p-5 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.07)' }}>
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '3px', color: '#607898', marginBottom: '10px' }}>WHAT HAPPENS NEXT</p>
+          <div className="space-y-2">
+            {['RAG system analyzes your error logs', 'Searches relevant documentation for solutions', 'Generates AI-powered fix recommendations', 'Ready to create a PR with the fix'].map((s, i) => (
+              <p key={i} className="text-xs" style={{ color: '#8cb4d4' }}>
+                <span style={{ color: '#00d4ff', marginRight: '8px' }}>{'>'}</span>{s}
               </p>
-              <button
-                onClick={handleGitHubConnect}
-                disabled={connecting || connected}
-                className="px-6 py-2 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-semibold rounded-lg transition"
-              >
-                {connecting ? 'Connecting...' : connected ? 'Connected' : 'Connect with GitHub'}
-              </button>
-            </div>
-
-            {/* Option 2: Upload Error Log */}
-            <div className="p-6 border-2 border-gray-200 rounded-lg hover:border-blue-300 transition">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Option 2: Upload Error Log Directly
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Don't want to authorize GitHub? You can drag and drop error log files directly
-                from your CI/CD pipeline. Supported formats: .log, .txt, .json
-              </p>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition cursor-pointer">
-                <svg
-                  className="mx-auto h-12 w-12 text-gray-400"
-                  stroke="currentColor"
-                  fill="none"
-                  viewBox="0 0 48 48"
-                >
-                  <path
-                    d="M28 8H12a4 4 0 00-4 4v20a4 4 0 004 4h24a4 4 0 004-4V20m-12-8v12m0 0l-4-4m4 4l4-4"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <p className="mt-2 text-sm text-gray-600">
-                  Drag and drop error logs here, or{' '}
-                  <span className="text-blue-600 font-semibold">click to browse</span>
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
+        </div>
 
-          {/* Benefits Section */}
-          <div className="p-6 bg-blue-50 rounded-lg mb-8">
-            <h3 className="font-semibold text-gray-900 mb-3">Why connect your source?</h3>
-            <ul className="space-y-2 text-gray-700">
-              <li>✓ Automatic error detection from CI/CD logs</li>
-              <li>✓ AI-powered fix recommendations</li>
-              <li>✓ One-click PR creation with suggested fixes</li>
-              <li>✓ Integration with your workflow</li>
-            </ul>
-          </div>
-
-          {/* Navigation */}
-          <div className="flex gap-4">
-            <button
-              onClick={handleSkip}
-              className="flex-1 px-6 py-3 bg-gray-400 hover:bg-gray-500 text-white font-semibold rounded-lg transition"
-            >
-              Skip for Now
-            </button>
-            {connected && (
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
-              >
-                Go to Dashboard
-              </button>
-            )}
-          </div>
+        {/* Navigation */}
+        <div className="pt-4" style={{ borderTop: '1px solid rgba(0,212,255,0.08)' }}>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="w-full rounded text-xs transition-all"
+            style={{ background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '3px', padding: '13px' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.14)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.07)')}
+          >
+            GO TO DASHBOARD →
+          </button>
         </div>
       </div>
     </div>

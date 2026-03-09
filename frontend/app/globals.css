@@ -1,11 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html {
-  scroll-behavior: smooth;
+:root {
+  --depfix-err:   #ff3c3c;
+  --depfix-fix:   #00ff88;
+  --depfix-cyan:  #00d4ff;
+  --depfix-amber: #ffb700;
+  --depfix-vec:   #a78bfa;
+  --depfix-bg:    #060810;
+  --depfix-bg2:   #0b0f1e;
+  --depfix-dim:   #607898;
+  --depfix-text:  #dce8f8;
 }
+
+html { scroll-behavior: smooth; }
 
 body {
   @apply bg-gray-50;
+}
+
+/* ── Logo SVG ring animations ── */
+.logo-ro {
+  animation: logo-spin 20s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center center;
+}
+.logo-ri {
+  animation: logo-spin-rev 11s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center center;
+}
+.logo-ep { animation: ep-pulse 2.2s ease-in-out infinite; }
+.logo-fg { animation: fix-glow 2.6s ease-in-out infinite; }
+
+@keyframes logo-spin     { to { transform: rotate(360deg);  } }
+@keyframes logo-spin-rev { to { transform: rotate(-360deg); } }
+@keyframes ep-pulse {
+  0%, 100% { opacity: 0.9; }
+  50%       { opacity: 0.3; }
+}
+@keyframes fix-glow {
+  0%, 100% { filter: drop-shadow(0 0 3px #00ff88);  }
+  50%       { filter: drop-shadow(0 0 10px #00ff88); }
+}
+
+/* ── Dark page helpers ── */
+.depfix-grid-bg {
+  background-image:
+    linear-gradient(rgba(0,212,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
 }

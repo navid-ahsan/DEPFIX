@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Vector Database
+  pgvector:
+    image: ankane/pgvector:latest
+    container_name: pgvector
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: vector_db
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - rag-net
+    restart: unless-stopped
+
+  # Ollama LLM & Embeddings Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - rag-net
+    restart: unless-stopped
+
+  # FastAPI Backend
+  backend:
+    image: rag-backend:latest
+    container_name: rag-backend
+    depends_on:
+      - pgvector
+      - ollama
+    environment:
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql+psycopg2://postgres:password123@pgvector:5432/vector_db
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    networks:
+      - rag-net
+    command: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+
+  # Next.js Frontend
+  frontend:
+    image: node:20-alpine
+    container_name: rag-frontend
+    depends_on:
+      - backend
+    working_dir: /app
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+      NODE_ENV: production
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    networks:
+      - rag-net
+    command: sh -c "npm ci --omit=dev && npm start"
+    restart: unless-stopped
+
+networks:
+  rag-net:
+    driver: bridge
+
+volumes:
+  pgvector_data:
+  ollama_data:

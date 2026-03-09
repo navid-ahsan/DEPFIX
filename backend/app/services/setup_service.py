@@ -178,20 +178,23 @@ def load_docs_from_local_jsonl(dependency_name: str) -> Optional[Dict]:
     if not jsonl_path.exists():
         return None
     
-    # Load first 100 chunks from jsonl
-    chunks = []
+    total_chunks = 0
+    sample_chunks = []
     try:
         with open(jsonl_path, 'r') as f:
-            for i, line in enumerate(f):
-                if i >= 100:  # Limit to first 100 chunks for preview
-                    break
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
                     chunk = json.loads(line)
-                    chunks.append({
-                        "text": chunk.get("content") or chunk.get("text", ""),
-                        "source": chunk.get("source", ""),
-                        "metadata": chunk.get("metadata", {}),
-                    })
+                    total_chunks += 1
+                    if len(sample_chunks) < 5:
+                        sample_chunks.append({
+                            "text": chunk.get("content") or chunk.get("text", ""),
+                            "source": chunk.get("source", ""),
+                            "metadata": chunk.get("metadata", {}),
+                        })
                 except json.JSONDecodeError:
                     continue
     except Exception as e:
@@ -200,8 +203,8 @@ def load_docs_from_local_jsonl(dependency_name: str) -> Optional[Dict]:
     
     return {
         "dependency": dependency_name,
-        "total_chunks": len(chunks),
-        "sample_chunks": chunks[:5],  # Return only first 5 as sample
+        "total_chunks": total_chunks,
+        "sample_chunks": sample_chunks,
         "ready_for_embedding": True,
     }
 

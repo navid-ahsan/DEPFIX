@@ -2,6 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 
+// Prevent static prerendering - this page needs runtime session data
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   // Check if user is already authenticated
   const session = await auth();

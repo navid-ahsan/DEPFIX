@@ -1,0 +1,38 @@
+# Docker build and runtime ignore patterns
+
+# Node modules
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Build artifacts
+.next/
+out/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Development
+.git
+.gitignore
+.DS_Store
+.vscode/
+.idea/
+
+# Documentation
+README.md
+CONTRIBUTING.md
+
+# Tests
+__tests__/
+coverage/
+
+# Package manager lock files (for smaller image)
+# Uncomment if you want leaner images
+# package-lock.json
+# yarn.lock

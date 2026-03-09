@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import axios from 'axios';
+import Navbar from '../../components/Navbar';
 
 interface DependencyProgress {
   name: string;
@@ -125,10 +126,10 @@ export default function SetupProgress() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen depfix-grid-bg flex items-center justify-center" style={{ background: '#060810' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading setup status...</p>
+          <div className="w-10 h-10 rounded-full border-2 border-transparent animate-spin mx-auto mb-5" style={{ borderTopColor: '#00d4ff' }} />
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", color: '#607898', fontSize: '11px', letterSpacing: '4px' }}>LOADING SETUP STATUS...</p>
         </div>
       </div>
     );
@@ -139,117 +140,104 @@ export default function SetupProgress() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Phase 1: Loading Documentation
-            </h1>
-            <p className="text-gray-600">
-              We're downloading and preparing documentation for the selected dependencies.
-            </p>
-          </div>
+    <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
+      <Navbar />
+      <div className="max-w-4xl mx-auto px-4 py-10">
 
-          {/* Progress Tracking */}
-          <div className="space-y-4 mb-8">
-            {setupStatus?.selected_dependencies?.map((depName: string) => {
-              const doc = docsLoaded[depName];
-              const isComplete = !!doc;
+        {/* Header */}
+        <div className="mb-8">
+          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '4px', color: '#607898' }}>SETUP / PHASE 1</p>
+          <h1 style={{ fontFamily: "'Orbitron', monospace", fontWeight: 700, fontSize: '1.6rem', color: '#dce8f8', marginTop: '6px' }}>
+            Loading Documentation
+          </h1>
+          <p style={{ fontFamily: "'Exo 2', sans-serif", fontSize: '14px', color: '#8cb4d4', marginTop: '6px', fontWeight: 300 }}>
+            Downloading and preparing documentation for selected dependencies.
+          </p>
+        </div>
 
-              return (
-                <div key={depName} className="p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-center gap-4">
-                    {isComplete ? (
-                      <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white">
-                        ✓
-                      </div>
-                    ) : (
-                      <div className="w-6 h-6 bg-blue-500 rounded-full animate-spin"></div>
-                    )}
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{depName}</h3>
-                      {isComplete && (
-                        <p className="text-sm text-gray-600">
-                          {doc.total_chunks} chunks loaded, ready for embedding
-                        </p>
-                      )}
-                      {!isComplete && (
-                        <p className="text-sm text-gray-600">Loading...</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Sample Chunks Preview */}
-                  {isComplete && doc.sample_chunks && (
-                    <div className="mt-3 pl-10 border-l-2 border-blue-200">
-                      <p className="text-xs font-semibold text-gray-700 mb-2">
-                        Sample content:
-                      </p>
-                      <div className="space-y-1">
-                        {doc.sample_chunks.slice(0, 2).map((chunk: any, idx: number) => (
-                          <p key={idx} className="text-xs text-gray-600 line-clamp-2">
-                            {chunk.text?.substring(0, 100)}...
-                          </p>
-                        ))}
-                      </div>
-                    </div>
+        {/* Dep items */}
+        <div className="space-y-3 mb-8">
+          {setupStatus?.selected_dependencies?.map((depName: string) => {
+            const doc = docsLoaded[depName];
+            const isComplete = !!doc;
+            return (
+              <div key={depName} className="rounded-lg p-4" style={{ background: '#0b0f1e', border: `1px solid ${isComplete ? 'rgba(0,255,136,0.2)' : 'rgba(0,212,255,0.1)'}` }}>
+                <div className="flex items-center gap-4">
+                  {isComplete ? (
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.4)', color: '#00ff88' }}>✓</div>
+                  ) : (
+                    <div className="w-6 h-6 rounded-full border-2 border-transparent animate-spin flex-shrink-0" style={{ borderTopColor: '#00d4ff' }} />
                   )}
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm" style={{ color: '#dce8f8' }}>{depName}</p>
+                    {isComplete ? (
+                      <p className="text-xs mt-0.5" style={{ color: '#607898' }}>{doc.total_chunks} chunks loaded</p>
+                    ) : (
+                      <p className="text-xs mt-0.5" style={{ color: '#607898' }}>loading...</p>
+                    )}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Overall Progress Bar */}
-          {setupStatus?.selected_dependencies && (
-            <div className="mb-8">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-sm font-semibold text-gray-700">Overall Progress</p>
-                <p className="text-sm text-gray-600">
-                  {Object.keys(docsLoaded).length} / {setupStatus.selected_dependencies.length}
-                </p>
+                {isComplete && doc.sample_chunks && (
+                  <div className="mt-3 pl-10">
+                    {doc.sample_chunks.slice(0, 2).map((chunk: any, idx: number) => (
+                      <p key={idx} className="text-xs mb-1 line-clamp-2" style={{ color: '#607898' }}>{chunk.text?.substring(0, 100)}...</p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div
-                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
-                  style={{
-                    width: `${(Object.keys(docsLoaded).length / setupStatus.selected_dependencies.length) * 100}%`,
-                  }}
-                ></div>
-              </div>
-            </div>
-          )}
+            );
+          })}
+        </div>
 
-          {/* Next Steps */}
-          {allDocsLoaded && (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-6">
-              <h3 className="font-semibold text-green-900 mb-2">✓ All documentation loaded!</h3>
-              <p className="text-sm text-green-800 mb-4">
-                Next: We'll embed these documents and index them in the vector database.
+        {/* Progress bar */}
+        {setupStatus?.selected_dependencies && (
+          <div className="mb-8 rounded-lg p-4" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.1)' }}>
+            <div className="flex justify-between items-center mb-3">
+              <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '3px', color: '#607898' }}>OVERALL PROGRESS</p>
+              <p style={{ fontFamily: "'Orbitron', monospace", fontSize: '14px', fontWeight: 700, color: '#00d4ff' }}>
+                {Object.keys(docsLoaded).length} / {setupStatus.selected_dependencies.length}
               </p>
             </div>
-          )}
-
-          {/* Navigation Buttons */}
-          <div className="flex gap-4">
-            {allDocsLoaded && (
-              <button
-                onClick={handleComplete}
-                className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
-              >
-                Continue to Phase 2: Embedding
-              </button>
-            )}
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="px-6 py-3 bg-gray-400 hover:bg-gray-500 text-white font-semibold rounded-lg transition"
-            >
-              Skip to Dashboard
-            </button>
+            <div className="w-full rounded-full h-2" style={{ background: 'rgba(255,255,255,0.05)' }}>
+              <div
+                className="h-2 rounded-full transition-all duration-500"
+                style={{ width: `${(Object.keys(docsLoaded).length / setupStatus.selected_dependencies.length) * 100}%`, background: '#00d4ff', boxShadow: '0 0 8px rgba(0,212,255,0.5)' }}
+              />
+            </div>
           </div>
+        )}
+
+        {/* All loaded banner */}
+        {allDocsLoaded && (
+          <div className="mb-6 p-4 rounded-lg" style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.25)' }}>
+            <p className="font-semibold text-sm mb-1" style={{ color: '#00ff88' }}>✓ All documentation loaded!</p>
+            <p className="text-xs" style={{ color: '#8cb4d4' }}>Next: embed documents and index them in the vector database.</p>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <div className="flex gap-4 pt-6" style={{ borderTop: '1px solid rgba(0,212,255,0.08)' }}>
+          {allDocsLoaded && (
+            <button
+              onClick={handleComplete}
+              className="flex-1 rounded text-xs transition-all"
+              style={{ background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.4)', color: '#00ff88', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '12px' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,255,136,0.16)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,255,136,0.08)')}
+            >
+              CONTINUE TO PHASE 2 →
+            </button>
+          )}
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="rounded text-xs transition-all"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', color: '#607898', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '12px 20px' }}
+          >
+            SKIP TO DASHBOARD
+          </button>
         </div>
       </div>
     </div>
   );
 }
+
