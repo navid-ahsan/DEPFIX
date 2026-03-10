@@ -1,293 +1,99 @@
-# GitLab CI/CD Pipeline for RAG Application
-# This pipeline automates testing, building, and deployment of the RAG system
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPFIX  •  GitLab CI Integration Template
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Drop this file into the ROOT of the repository you want DEPFIX to monitor.
+# When any job fails, the pipeline automatically ships the log to your
+# DEPFIX instance for RAG-powered error analysis.
+#
+# SETUP — add these as CI/CD Variables in GitLab (Settings → CI/CD → Variables):
+#
+#   DEPFIX_URL             Your DEPFIX backend URL, e.g. http://192.168.1.10:8000
+#   DEPFIX_WEBHOOK_SECRET  The secret set in your DEPFIX .env (DEPFIX_WEBHOOK_SECRET)
+#
+# ─────────────────────────────────────────────────────────────────────────────
 
+# ── Replace these stages with whatever your project actually uses ─────────────
 stages:
-  - validate
-  - test
   - build
-  - deploy-staging
-  - deploy-production
+  - test
+  - deploy
 
-# Define variables
-variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: "/certs"
-  DOCKER_IMAGE_NAME: "rag-application"
-  DOCKER_IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+# ── Reusable snippet: ships job.log to DEPFIX on failure ─────────────────────
+# anchor is referenced in each job's after_script
+.depfix_send_log: &depfix_send_log
+  - |
+    echo "Sending failure log to DEPFIX..."
+    PAYLOAD=$(python3 -c "
+    import json, os
+    log = open('job.log').read() if os.path.exists('job.log') else 'No log captured.'
+    print(json.dumps({
+        'workflow_name': '${CI_JOB_NAME}',
+        'run_id':        '${CI_PIPELINE_ID}',
+        'repository':    '${CI_PROJECT_PATH}',
+        'branch':        '${CI_COMMIT_BRANCH}',
+        'commit_sha':    '${CI_COMMIT_SHA}',
+        'conclusion':    'failure',
+        'log_content':   log
+    }))
+    ")
+    SIG=$(echo -n "$PAYLOAD" \
+      | openssl dgst -sha256 -hmac "$DEPFIX_WEBHOOK_SECRET" \
+      | awk '{print "sha256="$2}')
+    curl -sf -X POST "${DEPFIX_URL}/api/v1/webhook/github-actions" \
+      -H "Content-Type: application/json" \
+      -H "X-Hub-Signature-256: $SIG" \
+      -d "$PAYLOAD" \
+      && echo "✓ Log delivered to DEPFIX" \
+      || echo "⚠ DEPFIX delivery failed (non-blocking)"
 
-# Cache configuration for dependencies
-.cache_py_dependencies:
-  cache:
-    key: "$CI_COMMIT_REF_SLUG"
-    paths:
-      - .cache/pip
-      - venv/
+# ─────────────────────────────────────────────────────────────────────────────
+# YOUR JOBS
+# Add `2>&1 | tee job.log` to your script commands so the output is captured,
+# then add the after_script block shown below to each job you want to monitor.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ============ VALIDATE STAGE ============
-
-validate:dependencies:
-  stage: validate
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Validating project dependencies..."
-    - pip install --upgrade pip setuptools
-    - pip install -r requirements.txt
-    - bash scripts/validate_dependencies.sh
-  allow_failure: false
-  tags:
-    - docker
-
-validate:lint:
-  stage: validate
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Installing linting tools..."
-    - pip install -r requirements-dev.txt
-    - echo "Running flake8..."
-    - flake8 src/ tests/ --count --show-source --statistics
-    - echo "Running black check..."
-    - black --check src/ tests/ || true
-  allow_failure: true
-  tags:
-    - docker
-
-validate:config:
-  stage: validate
-  image: python:3.12
-  script:
-    - echo "Validating configuration files..."
-    - python3 -c "import toml; toml.load('src/config.toml'); print('✓ config.toml is valid')"
-    - test -f "pytest.ini" && echo "✓ pytest.ini exists" || (echo "❌ pytest.ini missing" && exit 1)
-    - test -f ".env.example" && echo "✓ .env.example exists" || (echo "❌ .env.example missing" && exit 1)
-  allow_failure: false
-  tags:
-    - docker
-
-# ============ TEST STAGE ============
-
-test:unit:
-  stage: test
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Installing test dependencies..."
-    - pip install -r requirements-dev.txt
-    - echo "Running unit tests..."
-    - pytest tests/ -v --tb=short --cov=src --cov-report=term --cov-report=html -m unit
-  coverage: '/TOTAL.*\s+(\d+%)$/'
-  artifacts:
-    paths:
-      - htmlcov/
-      - test_results.xml
-    reports:
-      coverage_report:
-        coverage_format: cobertura
-        path: coverage.xml
-    expire_in: 30 days
-    when: always
-  allow_failure: false
-  tags:
-    - docker
-
-test:integration:
-  stage: test
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Installing test dependencies..."
-    - pip install -r requirements-dev.txt
-    - echo "Running integration tests..."
-    - pytest tests/ -v --tb=short -m integration || true
-  allow_failure: true
-  only:
-    - main
-  tags:
-    - docker
-
-test:code-quality:
-  stage: test
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Installing quality check tools..."
-    - pip install pylint mypy
-    - echo "Running mypy type checking..."
-    - mypy src/ --ignore-missing-imports || true
-    - echo "Running pylint..."
-    - pylint src/ --disable=R,C --fail-under=7.0 || true
-  allow_failure: true
-  tags:
-    - docker
-
-# ============ BUILD STAGE ============
-
-build:docker-image:
+build:
   stage: build
-  image: docker:latest
-  services:
-    - docker:dind
   script:
-    - echo "Building Docker image..."
-    - docker build -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG .
-    - docker tag $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $DOCKER_IMAGE_NAME:latest
-    - echo "Image built successfully: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
-  only:
-    - main
-    - develop
-  tags:
-    - docker
-
-build:package:
-  stage: build
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Creating distribution packages..."
-    - pip install wheel
-    - python3 -m pip install build
-    - python3 -m build || true
-  artifacts:
-    paths:
-      - dist/
-    expire_in: 30 days
-  allow_failure: true
-  only:
-    - main
-  tags:
-    - docker
-
-# ============ DEPLOY STAGING ============
-
-deploy:staging:
-  stage: deploy-staging
-  image: docker:latest
-  services:
-    - docker:dind
-  before_script:
-    - echo "Preparing staging environment..."
-  script:
-    - echo "Deploying to staging with lab_model..."
-    - echo "Staging deployment configuration:"
-    - echo "  - Environment: lab_model"
-    - echo "  - Model: mistral:7b"
-    - echo "  - Database: pgvector (test instance)"
-    - |
-      cat > .env.staging << EOF
-      ENV=lab_model
-      MODEL=mistral:7b
-      DATABASE_URL=postgresql+psycopg2://postgres:root@pgvector-staging:5432/vector_db
-      OLLAMA_HOST=http://ollama-staging:11434
-      COLLECTION_NAME=Error_handling_staging
-      EOF
-    - echo "Deployment script would execute: docker-compose -f docker-compose.yml up -d"
-    - echo "✓ Staging deployment prepared"
-  environment:
-    name: staging
-    url: http://rag-api-staging.example.com
-  only:
-    - main
-    - develop
-  allow_failure: false
-  tags:
-    - docker
-
-# ============ DEPLOY PRODUCTION ============
-
-deploy:production:
-  stage: deploy-production
-  image: docker:latest
-  services:
-    - docker:dind
-  before_script:
-    - echo "Preparing production environment..."
-  script:
-    - echo "🚀 PRODUCTION DEPLOYMENT INITIATED"
-    - echo "Deploying to production with dgx_model..."
-    - echo "Production deployment configuration:"
-    - echo "  - Environment: dgx_model"
-    - echo "  - Model: my_llama4:latest (with GPU)"
-    - echo "  - Database: pgvector (production instance)"
-    - |
-      cat > .env.production << EOF
-      ENV=dgx_model
-      MODEL=my_llama4:latest
-      DATABASE_URL=postgresql+psycopg2://postgres:root@pgvector-prod:5432/vector_db_prod
-      OLLAMA_HOST=http://ollama-prod:11434
-      COLLECTION_NAME=Error_handling_production
-      CUDA_VISIBLE_DEVICES=0
-      EOF
-    - echo "Deployment script would execute: docker-compose -f docker-compose.yml up -d"
-    - echo "✓ Production deployment prepared"
-  environment:
-    name: production
-    url: http://rag-api.example.com
-    deployment_tier: production
-  only:
-    - main
-  when: manual  # Requires manual approval
-  allow_failure: false
-  tags:
-    - docker
-
-# ============ ROLLBACK JOB ============
-
-rollback:production:
-  stage: deploy-production
-  image: docker:latest
-  script:
-    - echo "Rolling back production deployment..."
-    - echo "Rollback strategy: Revert to previous image tag"
-    - echo "This would trigger: docker-compose down && docker-compose up -d"
-  environment:
-    name: production
-    action: rollback
-  when: manual
-  only:
-    - main
-  allow_failure: false
-  tags:
-    - docker
-
-# ============ SCHEDULED JOBS ============
-
-cleanup:cache:
-  stage: .post
-  image: python:3.12
-  script:
-    - echo "Cleaning up old caches and artifacts..."
-  only:
-    - schedules
-  tags:
-    - docker
-
-nightly:evaluation:
-  stage: test
-  image: python:3.12
-  extends: .cache_py_dependencies
-  script:
-    - echo "Running nightly RAG evaluation..."
-    - pip install -r requirements-dev.txt
-    - bash scripts/run_evaluation.sh lab_model mistral:7b
-  artifacts:
-    paths:
-      - data/outputs/
-    expire_in: 7 days
-  allow_failure: true
-  only:
-    - schedules
-  tags:
-    - docker
-
-# ============ SUCCESS & NOTIFICATION ============
-
-.notify_slack:
+    # ── Replace with your real build command ─────────────────────────────────
+    # Example:
+    #   pip install -r requirements.txt 2>&1 | tee job.log
+    #   docker build -t myapp . 2>&1 | tee job.log
+    - your-build-command 2>&1 | tee job.log
   after_script:
-    - |
-      if [ "$CI_JOB_STATUS" == "success" ]; then
-        echo "✓ Pipeline stage completed successfully"
-      else
-        echo "❌ Pipeline stage failed"
+    - if [ "$CI_JOB_STATUS" = "failed" ]; then
+        *depfix_send_log
       fi
+
+test:
+  stage: test
+  script:
+    # ── Replace with your real test command ──────────────────────────────────
+    # Example:
+    #   pytest tests/ -v 2>&1 | tee job.log
+    - your-test-command 2>&1 | tee job.log
+  after_script:
+    - if [ "$CI_JOB_STATUS" = "failed" ]; then
+        *depfix_send_log
+      fi
+
+deploy:
+  stage: deploy
+  script:
+    # ── Replace with your real deploy command ────────────────────────────────
+    - your-deploy-command 2>&1 | tee job.log
+  after_script:
+    - if [ "$CI_JOB_STATUS" = "failed" ]; then
+        *depfix_send_log
+      fi
+  only:
+    - main
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALTERNATIVE: upload via the file API (no webhook secret required)
+#
+#   curl -sf -X POST "${DEPFIX_URL}/api/v1/logs/upload" \
+#     -F "file=@job.log" \
+#     && echo "✓ Log uploaded to DEPFIX"
+# ─────────────────────────────────────────────────────────────────────────────
