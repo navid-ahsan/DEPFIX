@@ -8,7 +8,7 @@ set -e
 # Default values
 ENV=${1:-lab_model}
 MODEL=${2:-mistral:7b}
-EVAL_DATASET_PATH="src/eval_dataset.json"
+EVAL_DATASET_PATH="archive/legacy_src/eval_dataset.json"
 OUTPUT_DIR="data/outputs"
 
 echo "========================================"
