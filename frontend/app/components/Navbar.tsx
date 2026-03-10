@@ -22,8 +22,24 @@ export default function Navbar() {
           <DepfixLogo iconSize={30} showText={true} />
         </Link>
 
-        {/* Right: user + sign out */}
+        {/* Right: settings + user + sign out */}
         <div className="flex items-center gap-5">
+          <Link
+            href="/setup/config"
+            title="Configuration"
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: '16px',
+              color: '#607898',
+              lineHeight: 1,
+              textDecoration: 'none',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#00d4ff')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#607898')}
+          >
+            ⚙
+          </Link>
           {session?.user?.name && (
             <span
               style={{

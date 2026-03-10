@@ -248,3 +248,32 @@ class APIKey(Base):
 
     def __repr__(self) -> str:
         return f"<APIKey {self.service}>"
+
+
+class UserConfig(Base):
+    """User-editable runtime configuration (connectivity, models, prompts)."""
+
+    __tablename__ = "user_config"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), nullable=False, unique=True, index=True)
+
+    # Connectivity
+    ollama_url = Column(String(500), default="http://localhost:11434")
+    postgres_url = Column(String(500), default="postgresql+psycopg2://postgres:password123@localhost:5432/vector_db")
+
+    # Selected models
+    llm_model = Column(String(255), default="")
+    embedding_model = Column(String(255), default="nomic-embed-text")
+
+    # LLM parameters
+    temperature = Column(String(10), default="0.2")
+    max_tokens = Column(Integer, default=2048)
+    system_prompt = Column(Text, nullable=True)
+    preferred_quantization = Column(String(50), default="q4_K_M")
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<UserConfig user={self.user_id}>"

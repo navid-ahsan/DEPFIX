@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import SetupStepper from '../../components/SetupStepper';
+import { api } from '../../lib/api';
 
 interface RagResult {
   query_id: string;
@@ -52,7 +54,7 @@ export default function RAGAnalysisPage() {
     if (status === 'authenticated' && logId && !result) {
       // If no deps in URL, fetch from setup status first
       if (urlDeps.length === 0) {
-        axios.get('http://localhost:8000/api/v1/embedding/status', {
+        axios.get(api('/api/v1/embedding/status'), {
           headers: { Authorization: `Bearer ${session?.accessToken}` },
         }).then(r => {
           const deps = r.data?.dependencies || [];
@@ -71,7 +73,7 @@ export default function RAGAnalysisPage() {
       setError(null);
 
       const response = await axios.post(
-        `http://localhost:8000/api/v1/rag/analyze-error-log`,
+        api(`/api/v1/rag/analyze-error-log`),
         {
           log_id: logId,
           dependencies: (deps ?? resolvedDeps).filter(d => d),
@@ -97,7 +99,7 @@ export default function RAGAnalysisPage() {
 
     try {
       await axios.post(
-        `http://localhost:8000/api/v1/rag/approve-fix/${result.query_id}`,
+        api(`/api/v1/rag/approve-fix/${result.query_id}`),
         {
           fix_index: 0,
           feedback: feedback || undefined,
@@ -122,7 +124,7 @@ export default function RAGAnalysisPage() {
 
     try {
       await axios.post(
-        `http://localhost:8000/api/v1/rag/reject-fix/${result.query_id}`,
+        api(`/api/v1/rag/reject-fix/${result.query_id}`),
         {
           reason: feedback || undefined,
         },
@@ -146,6 +148,7 @@ export default function RAGAnalysisPage() {
     return (
       <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810' }}>
         <Navbar />
+        <SetupStepper currentStep={5} />
         <div className="flex items-center justify-center py-24">
           <div className="text-center">
             <div className="w-10 h-10 rounded-full border-2 border-transparent animate-spin mx-auto mb-5" style={{ borderTopColor: '#00d4ff' }} />
@@ -159,6 +162,7 @@ export default function RAGAnalysisPage() {
   return (
     <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
       <Navbar />
+      <SetupStepper currentStep={5} />
       <div className="max-w-4xl mx-auto py-10 px-4">
         <div className="rounded-xl p-8" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.1)' }}>
           {/* Header */}

@@ -46,6 +46,10 @@ body {
   0%, 100% { filter: drop-shadow(0 0 3px #00ff88);  }
   50%       { filter: drop-shadow(0 0 10px #00ff88); }
 }
+@keyframes stepPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(0,212,255,0.3); }
+  50%       { box-shadow: 0 0 14px rgba(0,212,255,0.7); }
+}
 
 /* ── Dark page helpers ── */
 .depfix-grid-bg {

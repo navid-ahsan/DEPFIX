@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
 from backend.app.database import get_db
-from backend.app.services.rag_service import RAGEngine
+from backend.app.services.rag_service import RAGEngine, PipelineNotReadyError
 from backend.app.models.database import Query, Log
 from backend.app.agents import OrchestratorAgent
 
@@ -73,6 +73,17 @@ async def analyze_error_log(
         
     except HTTPException:
         raise
+    except PipelineNotReadyError as e:
+        logger.warning(f"Pipeline not ready for log {request.log_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "pipeline_not_ready",
+                "message": str(e),
+                "action": "Complete the Embedding setup step before analysing logs.",
+                "setup_url": "/setup/embedding",
+            },
+        )
     except Exception as e:
         logger.error(f"Error analyzing log: {e}")
         raise HTTPException(status_code=500, detail=str(e))

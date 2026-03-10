@@ -307,6 +307,21 @@ class PGVectorStorage:
             logger.error(f"has_embeddings check failed: {e}")
             return False
 
+    def count_all_chunks(self) -> int:
+        """Return total number of embedded document chunks across all dependencies."""
+        if not self._ready:
+            return 0
+        try:
+            conn = self._get_conn()
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM document_chunks")
+                count = cur.fetchone()[0]
+            conn.close()
+            return count
+        except Exception as e:
+            logger.error(f"count_all_chunks failed: {e}")
+            return 0
+
 
 class VectorDatabaseManager:
     """Manage vector database operations (pgvector + SQLite metadata)."""

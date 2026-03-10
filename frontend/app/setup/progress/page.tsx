@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import SetupStepper from '../../components/SetupStepper';
+import { api } from '../../lib/api';
 
 interface DependencyProgress {
   name: string;
@@ -37,7 +39,7 @@ export default function SetupProgress() {
 
   const fetchSetupStatus = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/api/v1/setup/status', {
+      const response = await axios.get(api('/api/v1/setup/status'), {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -72,7 +74,7 @@ export default function SetupProgress() {
 
         // Fetch doc data
         const response = await axios.get(
-          `http://localhost:8000/api/v1/setup/docs/${depName}`,
+          api(`/api/v1/setup/docs/${depName}`),
           {
             headers: {
               Authorization: `Bearer ${session?.accessToken}`,
@@ -113,7 +115,7 @@ export default function SetupProgress() {
 
   const handleComplete = async () => {
     try {
-      await axios.post('http://localhost:8000/api/v1/setup/complete-phase1', {}, {
+      await axios.post(api('/api/v1/setup/complete-phase1'), {}, {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -142,6 +144,7 @@ export default function SetupProgress() {
   return (
     <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
       <Navbar />
+      <SetupStepper currentStep={2} />
       <div className="max-w-4xl mx-auto px-4 py-10">
 
         {/* Header */}

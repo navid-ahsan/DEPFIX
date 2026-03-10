@@ -394,6 +394,11 @@ class RAGASEvaluator:
             return None
 
 
+class PipelineNotReadyError(Exception):
+    """Raised when the RAG pipeline prerequisites are not met."""
+    pass
+
+
 class RAGEngine:
     """Main RAG orchestration engine."""
 
@@ -402,6 +407,44 @@ class RAGEngine:
         self.retriever = DocumentRetriever()
         self.fix_generator = FixGenerator()
         self.evaluator = RAGASEvaluator()
+
+    async def check_pipeline_ready(self) -> None:
+        """Verify all pipeline components are ready before analysis.
+
+        Checks (in order):
+        1. pgvector DB is connected and table exists
+        2. At least one document chunk has been embedded
+        3. Ollama embedding service is reachable
+
+        Raises PipelineNotReadyError with a descriptive message if any check fails.
+        """
+        pg = self.retriever.pg_storage
+
+        # 1. pgvector connection
+        if not pg._ready:
+            raise PipelineNotReadyError(
+                "pgvector is not connected. Check that PostgreSQL is running and "
+                "VECTORDB_POSTGRES_URL is configured correctly."
+            )
+
+        # 2. Embeddings exist (run blocking count in thread)
+        chunk_count = await asyncio.to_thread(pg.count_all_chunks)
+        if chunk_count == 0:
+            raise PipelineNotReadyError(
+                "No document embeddings found in pgvector. "
+                "Please complete the Embedding step in the setup wizard "
+                "(/setup/embedding) before analysing logs."
+            )
+
+        # 3. Ollama embedding model reachable
+        if not self.retriever.is_available:
+            raise PipelineNotReadyError(
+                "Ollama embedding service is unreachable. "
+                "Ensure Ollama is running and the embedding model (e.g. nomic-embed-text) "
+                "is pulled before analysing logs."
+            )
+
+        logger.info(f"✓ Pipeline ready — {chunk_count} chunks indexed in pgvector")
 
     async def analyze_error_and_generate_fix(
         self,
@@ -420,6 +463,9 @@ class RAGEngine:
 
         if not log:
             raise ValueError(f"Log {log_id} not found")
+
+        # Guard: ensure embedding pipeline is ready before attempting retrieval
+        await self.check_pipeline_ready()
 
         # Retrieve docs (embedding call — blocking network I/O)
         relevant_docs = await self.retriever.retrieve_relevant_docs_async(

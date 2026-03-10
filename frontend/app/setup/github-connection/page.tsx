@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import SetupStepper from '../../components/SetupStepper';
+import { api } from '../../lib/api';
 
 interface ErrorLog {
   id: string;
@@ -39,7 +41,7 @@ export default function GitHubConnection() {
 
   const fetchUploadedLogs = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/api/v1/logs', {
+      const response = await axios.get(api('/api/v1/logs'), {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -87,7 +89,7 @@ export default function GitHubConnection() {
       formData.append('file', file);
 
       const response = await axios.post(
-        'http://localhost:8000/api/v1/logs/upload',
+        api('/api/v1/logs/upload'),
         formData,
         {
           headers: {
@@ -111,7 +113,7 @@ export default function GitHubConnection() {
     if (!confirm('Delete this log?')) return;
 
     try {
-      await axios.delete(`http://localhost:8000/api/v1/logs/${logId}`, {
+      await axios.delete(api(`/api/v1/logs/${logId}`), {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -141,6 +143,7 @@ export default function GitHubConnection() {
   return (
     <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
       <Navbar />
+      <SetupStepper currentStep={4} />
       <div className="max-w-4xl mx-auto px-4 py-10">
 
         {/* Header */}

@@ -104,6 +104,7 @@ def create_app() -> FastAPI:
 
     # Include routers
     from .api import logs, dependencies, rag, integrations, analysis, setup, embedding, github
+    from .api import config as config_api, system as system_api, ollama_routes, webhook
     app.include_router(logs.router)
     app.include_router(dependencies.router)
     app.include_router(rag.router)
@@ -112,6 +113,10 @@ def create_app() -> FastAPI:
     app.include_router(setup.router)
     app.include_router(embedding.router)
     app.include_router(github.router)
+    app.include_router(config_api.router)
+    app.include_router(system_api.router)
+    app.include_router(ollama_routes.router)
+    app.include_router(webhook.router)
 
     logger.info(f"✅ FastAPI app created with {len(app.routes)} routes")
     return app

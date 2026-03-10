@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import SetupStepper from '../../components/SetupStepper';
+import { api } from '../../lib/api';
 
 interface EmbeddingStatus {
   status: string;
@@ -40,7 +42,7 @@ export default function EmbeddingSetup() {
 
   const initializePage = async () => {
     try {
-      const statusResponse = await axios.get('http://localhost:8000/api/v1/setup/status', {
+      const statusResponse = await axios.get(api('/api/v1/setup/status'), {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -60,7 +62,7 @@ export default function EmbeddingSetup() {
 
   const pollStatus = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/api/v1/embedding/status', {
+      const response = await axios.get(api('/api/v1/embedding/status'), {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -80,7 +82,7 @@ export default function EmbeddingSetup() {
     setStartingEmbedding(true);
     try {
       await axios.post(
-        'http://localhost:8000/api/v1/embedding/start',
+        api('/api/v1/embedding/start'),
         { dependency_names: selectedDeps },
         {
           headers: {
@@ -99,7 +101,7 @@ export default function EmbeddingSetup() {
 
   const handleComplete = async () => {
     try {
-      await axios.post('http://localhost:8000/api/v1/embedding/complete-phase2', {}, {
+      await axios.post(api('/api/v1/embedding/complete-phase2'), {}, {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -127,6 +129,7 @@ export default function EmbeddingSetup() {
   return (
     <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
       <Navbar />
+      <SetupStepper currentStep={3} />
       <div className="max-w-4xl mx-auto px-4 py-10">
 
         {/* Header */}

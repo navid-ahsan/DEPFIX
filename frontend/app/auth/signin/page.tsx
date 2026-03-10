@@ -20,7 +20,7 @@ export default function SignIn() {
         email: testEmail,
         password: testPassword,
         redirect: true,
-        callbackUrl: '/dashboard',
+        callbackUrl: '/setup/config',
       });
 
       if (result?.error) {
@@ -39,7 +39,7 @@ export default function SignIn() {
     try {
       await signIn('github', {
         redirect: true,
-        callbackUrl: '/dashboard',
+        callbackUrl: '/setup/config',
       });
     } catch (err) {
       setError('GitHub authentication failed.');

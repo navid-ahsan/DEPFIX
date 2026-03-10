@@ -50,11 +50,11 @@ const authOptions: NextAuthOptions = {
       return session;
     },
     async redirect({ url, baseUrl }: any) {
-      // Redirect to setup dependencies after login
+      // Redirect to system config on first login
       if (url.startsWith(baseUrl)) {
-        return `${baseUrl}/setup/dependencies`;
+        return `${baseUrl}/setup/config`;
       }
-      return `${baseUrl}/setup/dependencies`;
+      return `${baseUrl}/setup/config`;
     },
   },
 };

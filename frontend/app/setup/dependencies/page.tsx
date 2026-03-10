@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import SetupStepper from '../../components/SetupStepper';
+import { api } from '../../lib/api';
 
 interface Dependency {
   id: string;
@@ -47,7 +49,7 @@ export default function DependenciesSetup() {
   const fetchDependencies = async () => {
     try {
       const response = await axios.get(
-        'http://localhost:8000/api/v1/setup/dependencies'
+        api('/api/v1/setup/dependencies')
       );
       setDependencies(response.data);
       setLoading(false);
@@ -109,7 +111,7 @@ export default function DependenciesSetup() {
     setSubmitting(true);
     try {
       await axios.post(
-        'http://localhost:8000/api/v1/setup/select',
+        api('/api/v1/setup/select'),
         { 
           dependency_names: selected,
           custom_dependencies: customDeps,
@@ -144,6 +146,7 @@ export default function DependenciesSetup() {
   return (
     <div className="min-h-screen depfix-grid-bg" style={{ background: '#060810', color: '#dce8f8' }}>
       <Navbar />
+      <SetupStepper currentStep={1} />
       <div className="max-w-5xl mx-auto px-4 py-10">
 
         {/* Header */}
