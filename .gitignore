@@ -41,6 +41,23 @@ Thumbs.db
 /db/embed_data
 /data/doc_sources
 
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Generated / lock files
+requirements-lock.txt
+
+# Next.js build output
+frontend/.next/
+
+# VS Code workspace
+*.code-workspace
+
 # Testing
 test_results/
+htmlcov/
 htmlcov/
