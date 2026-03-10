@@ -135,6 +135,45 @@ function StatusDot({ status }: { status: 'untested' | 'ok' | 'err' }) {
   );
 }
 
+// ── CI/CD snippet templates (shown in the webhook card) ─────────────────────
+
+const GH_ACTIONS_SNIPPET = `# .github/workflows/your-workflow.yml  —  add as last step in any job
+# Repo secret required: DEPFIX_URL
+
+- name: Send failure log to DEPFIX
+  if: failure()
+  run: |
+    jq -n \\
+      --arg wf   "\${{ github.workflow }}" \\
+      --arg run  "\${{ github.run_id }}" \\
+      --arg repo "\${{ github.repository }}" \\
+      --arg ref  "\${{ github.ref_name }}" \\
+      --arg sha  "\${{ github.sha }}" \\
+      --arg log  "$(cat job.log 2>/dev/null || echo '')" \\
+      '{workflow_name:$wf,run_id:$run,repository:$repo,branch:$ref,commit_sha:$sha,conclusion:"failure",log_content:$log}' \\
+    | curl -sf -X POST "\${{ secrets.DEPFIX_URL }}/api/v1/webhook/github-actions" \\
+      -H "Content-Type: application/json" -d @-
+  # Tip: pipe your build command through: your-cmd 2>&1 | tee job.log`.trim();
+
+const GITLAB_SNIPPET = `# .gitlab-ci.yml  —  add to any job's after_script
+# CI/CD variable required: DEPFIX_URL
+
+after_script:
+  - |
+    if [ "$CI_JOB_STATUS" = "failed" ]; then
+      jq -n \\
+        --arg wf   "$CI_JOB_NAME" \\
+        --arg run  "$CI_PIPELINE_ID" \\
+        --arg repo "$CI_PROJECT_PATH" \\
+        --arg ref  "$CI_COMMIT_BRANCH" \\
+        --arg sha  "$CI_COMMIT_SHA" \\
+        --arg log  "$(cat job.log 2>/dev/null || echo '')" \\
+        '{workflow_name:$wf,run_id:$run,repository:$repo,branch:$ref,commit_sha:$sha,conclusion:"failure",log_content:$log}' \\
+      | curl -sf -X POST "\${DEPFIX_URL}/api/v1/webhook/github-actions" \\
+        -H "Content-Type: application/json" -d @-
+    fi
+  # Tip: pipe your build command through: your-cmd 2>&1 | tee job.log`.trim();
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
@@ -181,6 +220,9 @@ export default function ConfigPage() {
   // Docker health check
   const [dockerContainers, setDockerContainers] = useState<{ name: string; status: string; image: string }[] | null>(null);
   const [dockerChecking, setDockerChecking] = useState(false);
+
+  // CI/CD webhook tab
+  const [ciTab, setCiTab] = useState<'github' | 'gitlab'>('github');
 
   // Save feedback
   const [saving, setSaving] = useState(false);
@@ -297,7 +339,8 @@ export default function ConfigPage() {
   };
 
   const pullNewModel = async () => {
-    if (!pullModel.trim()) return;    setPulling(true);
+    if (!pullModel.trim()) return;
+    setPulling(true);
     setPullLines([]);
     setPullDone(false);
 
@@ -851,34 +894,95 @@ export default function ConfigPage() {
           )}
         </div>
 
-        {/* ── GitHub Actions Webhook ───────────────────────────────────── */}
+        {/* ── CI/CD Webhook Integration ──────────────────────────────── */}
         <div style={{ ...card, marginBottom: '20px' }}>
-          <SectionTitle color="#00d4ff">GITHUB ACTIONS WEBHOOK</SectionTitle>
+          <SectionTitle color="#00d4ff">CI / CD WEBHOOK INTEGRATION</SectionTitle>
           <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '14px' }}>
-            Point your CI/CD pipeline to this endpoint so DEPFIX automatically receives failure logs for analysis.
+            Point your CI/CD pipeline at this endpoint. DEPFIX stores every failure log and makes it
+            available for RAG-powered analysis in the dashboard.
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <code
-              style={{
-                flex: 1,
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: '11px',
-                color: '#00d4ff',
-                background: 'rgba(0,0,0,0.35)',
-                border: '1px solid rgba(0,212,255,0.2)',
-                borderRadius: '3px',
-                padding: '8px 12px',
-                overflowX: 'auto',
-                whiteSpace: 'nowrap',
-                display: 'block',
-              }}
-            >
+
+          {/* Endpoint */}
+          <label style={lbl}>ENDPOINT (POST)</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+            <code style={{
+              flex: 1,
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: '11px',
+              color: '#00d4ff',
+              background: 'rgba(0,0,0,0.35)',
+              border: '1px solid rgba(0,212,255,0.2)',
+              borderRadius: '3px',
+              padding: '8px 12px',
+              overflowX: 'auto' as const,
+              whiteSpace: 'nowrap' as const,
+              display: 'block',
+            }}>
               {backendUrl || 'http://localhost:8000'}/api/v1/webhook/github-actions
             </code>
           </div>
-          <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#607898', letterSpacing: '2px', margin: 0 }}>
-            METHOD: POST · Content-Type: application/json · Fields: workflow_name, run_id, repository, log_content
-          </p>
+
+          {/* Tab switcher */}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+            {(['github', 'gitlab'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setCiTab(tab)}
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: '10px',
+                  letterSpacing: '2px',
+                  padding: '6px 16px',
+                  border: `1px solid ${ciTab === tab ? '#00d4ff' : 'rgba(0,212,255,0.2)'}`,
+                  background: ciTab === tab ? 'rgba(0,212,255,0.12)' : 'transparent',
+                  color: ciTab === tab ? '#00d4ff' : '#607898',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {tab === 'github' ? 'GITHUB ACTIONS' : 'GITLAB CI'}
+              </button>
+            ))}
+          </div>
+
+          {/* Snippet + copy button */}
+          <div style={{ position: 'relative' }}>
+            <pre style={{
+              margin: 0,
+              padding: '14px 50px 14px 16px',
+              background: 'rgba(0,0,0,0.45)',
+              border: '1px solid rgba(0,212,255,0.15)',
+              borderRadius: '3px',
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: '10px',
+              color: '#8cb4d4',
+              lineHeight: 1.75,
+              overflowX: 'auto',
+              whiteSpace: 'pre',
+            }}>
+              {ciTab === 'github' ? GH_ACTIONS_SNIPPET : GITLAB_SNIPPET}
+            </pre>
+            <button
+              onClick={() => navigator.clipboard.writeText(ciTab === 'github' ? GH_ACTIONS_SNIPPET : GITLAB_SNIPPET)}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: '9px',
+                letterSpacing: '1px',
+                padding: '4px 10px',
+                border: '1px solid rgba(0,212,255,0.25)',
+                background: 'rgba(0,0,0,0.55)',
+                color: '#607898',
+                borderRadius: '2px',
+                cursor: 'pointer',
+              }}
+            >
+              COPY
+            </button>
+          </div>
         </div>
 
         {/* ── Save / Continue ────────────────────────────────────────────── */}
