@@ -24,9 +24,7 @@ ENV NEXTAUTH_URL=http://localhost:3000
 ENV PORT=3000
 
 # Start Next.js
-CMD ["npm", "start"]
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
-# Start Next.js app
 CMD ["npm", "start"]

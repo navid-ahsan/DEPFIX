@@ -36,16 +36,16 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-    """
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
+    """Run migrations in 'online' mode."""
+    import os
+    db_url = (
+        os.environ.get("VECTORDB_POSTGRES_URL")
+        or os.environ.get("DATABASE_URL")
+        or config.get_main_option("sqlalchemy.url")
+    )
 
     connectable = engine_from_config(
-        configuration,
+        {"sqlalchemy.url": db_url},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

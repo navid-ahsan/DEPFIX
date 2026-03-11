@@ -250,6 +250,25 @@ class APIKey(Base):
         return f"<APIKey {self.service}>"
 
 
+class DEPFIXApiKey(Base):
+    """API key for authenticating CI/CD pipelines and external callers to DEPFIX."""
+
+    __tablename__ = "depfix_api_keys"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)          # e.g. "GitHub Actions – main repo"
+    key_hash = Column(String(255), nullable=False)      # pbkdf2 hash, never stored plaintext
+    is_active = Column(Boolean, default=True, index=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", backref="depfix_api_keys")
+
+    def __repr__(self) -> str:
+        return f"<DEPFIXApiKey {self.name!r} user={self.user_id[:8]}>"
+
+
 class UserConfig(Base):
     """User-editable runtime configuration (connectivity, models, prompts)."""
 
@@ -261,6 +280,12 @@ class UserConfig(Base):
     # Connectivity
     ollama_url = Column(String(500), default="http://localhost:11434")
     postgres_url = Column(String(500), default="postgresql+psycopg2://postgres:password123@localhost:5432/vector_db")
+
+    # GitHub / GitLab integration tokens (stored in plaintext for API calls;
+    # only kept in the user's own database instance — self-hosted model)
+    github_token = Column(String(500), nullable=True)
+    gitlab_token = Column(String(500), nullable=True)
+    gitlab_url = Column(String(500), default="https://gitlab.com")
 
     # Selected models
     llm_model = Column(String(255), default="")
