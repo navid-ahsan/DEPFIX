@@ -28,6 +28,7 @@ class UserConfigRequest(BaseModel):
     max_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
     preferred_quantization: Optional[str] = None
+    github_token: Optional[str] = None
 
 
 class UserConfigResponse(BaseModel):
@@ -39,6 +40,7 @@ class UserConfigResponse(BaseModel):
     max_tokens: int
     system_prompt: Optional[str]
     preferred_quantization: str
+    github_token: Optional[str] = None
 
 
 class ConnectionTestRequest(BaseModel):
@@ -67,6 +69,7 @@ def config_to_response(config: UserConfig) -> UserConfigResponse:
         max_tokens=config.max_tokens or 2048,
         system_prompt=config.system_prompt,
         preferred_quantization=config.preferred_quantization or "q4_K_M",
+        github_token=config.github_token or None,
     )
 
 

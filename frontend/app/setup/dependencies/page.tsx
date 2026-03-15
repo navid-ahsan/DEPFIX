@@ -21,6 +21,7 @@ interface Dependency {
 interface CustomDependency {
   name: string;
   description: string;
+  repository_url?: string;
 }
 
 export default function DependenciesSetup() {
@@ -31,9 +32,30 @@ export default function DependenciesSetup() {
   const [customDeps, setCustomDeps] = useState<CustomDependency[]>([]);
   const [customName, setCustomName] = useState('');
   const [customDesc, setCustomDesc] = useState('');
+  const [customRepoUrl, setCustomRepoUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fetchingDocs, setFetchingDocs] = useState(false);
+  const [fetchStatus, setFetchStatus] = useState<Record<string, {
+    status: string; chunks?: number; files?: number; message?: string; source?: string;
+  }>>({});
+  const [docsHealth, setDocsHealth] = useState<Record<string, {
+    chunks: number; source_type: string; stale: boolean; sections: string[];
+  }>>({}); 
+
+  type FetchDepth = 'quick' | 'balanced' | 'full';
+  const [fetchDepth, setFetchDepth] = useState<FetchDepth>('balanced');
+  const [rateLimit, setRateLimit] = useState<{
+    remaining: number | null; limit: number | null; reset_in_min: number | null;
+    authenticated: boolean; can_fetch: boolean; error?: string;
+  } | null>(null);
+
+  const DEPTH_FILES: Record<FetchDepth, { files: number; label: string }> = {
+    quick:    { files: 15, label: 'QUICK · 15 files · ~16 req/dep' },
+    balanced: { files: 40, label: 'BALANCED · 40 files · ~41 req/dep' },
+    full:     { files: 80, label: 'FULL · 80 files · ~81 req/dep' },
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -48,10 +70,14 @@ export default function DependenciesSetup() {
 
   const fetchDependencies = async () => {
     try {
-      const response = await axios.get(
-        api('/api/v1/setup/dependencies')
-      );
-      setDependencies(response.data);
+      const [depsResp, healthResp, rlResp] = await Promise.all([
+        axios.get(api('/api/v1/setup/dependencies')),
+        axios.get(api('/api/v1/setup/docs-health')).catch(() => ({ data: { deps: {} } })),
+        axios.get(api('/api/v1/setup/github-rate-limit')).catch(() => ({ data: null })),
+      ]);
+      setDependencies(depsResp.data);
+      setDocsHealth(healthResp.data.deps || {});
+      setRateLimit(rlResp.data);
       setLoading(false);
     } catch (err) {
       setError('Failed to load dependencies');
@@ -87,11 +113,13 @@ export default function DependenciesSetup() {
     const newDep: CustomDependency = {
       name: customName,
       description: customDesc || 'Custom dependency',
+      ...(customRepoUrl.trim() ? { repository_url: customRepoUrl.trim() } : {}),
     };
     setCustomDeps([...customDeps, newDep]);
     setSelected([...selected, customName]);
     setCustomName('');
     setCustomDesc('');
+    setCustomRepoUrl('');
     setError(null);
   };
 
@@ -109,12 +137,14 @@ export default function DependenciesSetup() {
     }
 
     setSubmitting(true);
+    setError(null);
     try {
       await axios.post(
         api('/api/v1/setup/select'),
-        { 
+        {
           dependency_names: selected,
           custom_dependencies: customDeps,
+          fetch_depth: fetchDepth,
         },
         {
           headers: {
@@ -123,14 +153,37 @@ export default function DependenciesSetup() {
         }
       );
 
-      // Redirect to progress page
-      router.push('/setup/progress');
+      // Switch to doc-fetch progress view
+      const initialStatus: typeof fetchStatus = {};
+      [...selected, ...customDeps.map((d) => d.name)].forEach((n) => {
+        initialStatus[n] = { status: 'pending' };
+      });
+      setFetchStatus(initialStatus);
+      setFetchingDocs(true);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to select dependencies');
       setSubmitting(false);
-      console.error(err);
     }
   };
+
+  // Poll doc-fetch status while fetching is in progress
+  useEffect(() => {
+    if (!fetchingDocs) return;
+    const interval = setInterval(async () => {
+      try {
+        const resp = await axios.get(api('/api/v1/setup/fetch-docs/status'));
+        setFetchStatus(resp.data.deps || {});
+        if (resp.data.all_done) {
+          clearInterval(interval);
+          // Brief pause so user sees the completed state, then navigate
+          setTimeout(() => router.push('/setup/progress'), 1200);
+        }
+      } catch {
+        // non-fatal — keep polling
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [fetchingDocs]);
 
   if (status === 'loading' || loading) {
     return (
@@ -167,6 +220,59 @@ export default function DependenciesSetup() {
           </div>
         )}
 
+        {/* ---- Doc-fetch progress view ---- */}
+        {fetchingDocs ? (
+          <div>
+            <div className="mb-6 p-4 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.18)' }}>
+              <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '4px', color: '#00d4ff', marginBottom: '16px' }}>
+                // FETCHING DOCUMENTATION FROM GITHUB
+              </p>
+              <div className="space-y-3">
+                {Object.entries(fetchStatus).map(([name, info]) => {
+                  const statusColor =
+                    info.status === 'done' ? '#00ff88' :
+                    info.status === 'fetching' ? '#00d4ff' :
+                    info.status === 'warning' ? '#ffb700' :
+                    info.status === 'error' ? '#ff3c3c' : '#607898';
+                  const icon =
+                    info.status === 'done' ? '✓' :
+                    info.status === 'fetching' ? '◌' :
+                    info.status === 'warning' ? '⚠' :
+                    info.status === 'error' ? '✗' : '○';
+                  const label =
+                    info.status === 'done'
+                      ? `${info.chunks ?? 0} chunks from ${info.files ?? 0} files${info.source === 'local' ? ' (local cache)' : ''}`
+                      : info.status === 'fetching' ? 'fetching...'
+                      : info.status === 'warning' ? (info.message ?? 'no docs found')
+                      : info.status === 'error' ? (info.message ?? 'error')
+                      : 'queued';
+                  return (
+                    <div key={name} className="flex items-center gap-3 rounded px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${statusColor}22` }}>
+                      <span style={{ color: statusColor, fontFamily: "'Share Tech Mono', monospace", fontSize: '14px', minWidth: '16px' }}>
+                        {info.status === 'fetching' ? (
+                          <span className="inline-block animate-spin">◌</span>
+                        ) : icon}
+                      </span>
+                      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', color: '#dce8f8', minWidth: '140px' }}>{name}</span>
+                      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: statusColor }}>{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {Object.values(fetchStatus).every((v) => ['done', 'warning', 'error'].includes(v.status)) && (
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={() => router.push('/setup/progress')}
+                    className="rounded text-xs transition-all"
+                    style={{ background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.4)', color: '#00ff88', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '9px 24px' }}
+                  >
+                    CONTINUE TO PHASE 2 →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 
@@ -203,9 +309,20 @@ export default function DependenciesSetup() {
                             style={{ accentColor: '#00d4ff' }}
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <p className="text-sm font-semibold" style={{ color: '#dce8f8' }}>{dep.display_name}</p>
                               <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: '#607898' }}>({dep.name})</span>
+                              {docsHealth[dep.name] && (
+                                docsHealth[dep.name].stale ? (
+                                  <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#ffb700', background: 'rgba(255,183,0,0.08)', border: '1px solid rgba(255,183,0,0.25)', borderRadius: '3px', padding: '1px 6px', letterSpacing: '0.5px' }}>
+                                    ⚠ STALE — re-fetch
+                                  </span>
+                                ) : (
+                                  <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#00ff88', background: 'rgba(0,255,136,0.05)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '3px', padding: '1px 6px' }}>
+                                    {docsHealth[dep.name].chunks} chunks
+                                  </span>
+                                )
+                              )}
                             </div>
                             <p className="text-xs mt-1" style={{ color: '#8cb4d4' }}>{dep.description}</p>
                             {dep.documentation_url && (
@@ -239,12 +356,21 @@ export default function DependenciesSetup() {
                     className="w-full rounded text-sm"
                     style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(167,139,250,0.25)', color: '#dce8f8', fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', padding: '8px 10px', outline: 'none' }}
                   />
-                  <textarea
+                  <input
+                    type="text"
                     placeholder="Description (optional)"
                     value={customDesc}
                     onChange={(e) => setCustomDesc(e.target.value)}
-                    className="w-full rounded text-sm resize-none"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(167,139,250,0.25)', color: '#dce8f8', fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', padding: '8px 10px', outline: 'none', height: '60px' }}
+                    className="w-full rounded text-sm"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(167,139,250,0.25)', color: '#dce8f8', fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', padding: '8px 10px', outline: 'none' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="GitHub URL (optional)"
+                    value={customRepoUrl}
+                    onChange={(e) => setCustomRepoUrl(e.target.value)}
+                    className="w-full rounded text-sm"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(167,139,250,0.25)', color: '#dce8f8', fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', padding: '8px 10px', outline: 'none' }}
                   />
                   <button
                     type="button"
@@ -288,6 +414,84 @@ export default function DependenciesSetup() {
             </div>
           </div>
 
+          {/* ---- Rate limit + depth picker ---- */}
+          {(() => {
+            const totalDeps = selected.length + customDeps.length;
+            const estRequests = totalDeps * (1 + DEPTH_FILES[fetchDepth].files);
+            const remaining = rateLimit?.remaining ?? null;
+            const overBudget = remaining !== null && totalDeps > 0 && estRequests > remaining;
+            const rlColor = remaining === null ? '#607898' : remaining > 200 ? '#00ff88' : remaining > 30 ? '#ffb700' : '#ff3c3c';
+            return (
+              <div className="space-y-3 mb-6">
+
+                {/* Rate limit bar */}
+                <div className="rounded-lg px-4 py-3 flex items-center justify-between gap-4" style={{ background: '#0b0f1e', border: `1px solid ${rlColor}33` }}>
+                  <div className="flex items-center gap-3">
+                    <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '3px', color: '#607898' }}>GITHUB RATE LIMIT</span>
+                    {rateLimit?.authenticated ? (
+                      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#00d4ff', background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)', borderRadius: '3px', padding: '1px 6px' }}>TOKEN</span>
+                    ) : (
+                      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#607898', background: 'rgba(96,120,152,0.1)', border: '1px solid rgba(96,120,152,0.2)', borderRadius: '3px', padding: '1px 6px' }}>ANON</span>
+                    )}
+                  </div>
+                  {rateLimit?.error ? (
+                    <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: '#607898' }}>unavailable</span>
+                  ) : remaining !== null ? (
+                    <div className="flex items-center gap-3">
+                      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', color: rlColor, fontWeight: 700 }}>
+                        {remaining.toLocaleString()} / {(rateLimit?.limit ?? 60).toLocaleString()} remaining
+                      </span>
+                      {(rateLimit?.reset_in_min ?? 0) > 0 && (
+                        <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#607898' }}>resets in {rateLimit?.reset_in_min}m</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: '#607898' }}>loading...</span>
+                  )}
+                </div>
+
+                {/* Depth picker */}
+                <div className="rounded-lg px-4 py-3" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.12)' }}>
+                  <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '3px', color: '#607898', marginBottom: '10px' }}>FETCH DEPTH</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {(['quick', 'balanced', 'full'] as FetchDepth[]).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setFetchDepth(d)}
+                        className="rounded text-xs transition-all"
+                        style={{
+                          fontFamily: "'Share Tech Mono', monospace", letterSpacing: '1.5px', padding: '7px 14px', fontSize: '10px',
+                          background: fetchDepth === d ? 'rgba(0,212,255,0.12)' : 'rgba(255,255,255,0.02)',
+                          border: fetchDepth === d ? '1px solid rgba(0,212,255,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                          color: fetchDepth === d ? '#00d4ff' : '#607898',
+                        }}
+                      >
+                        {DEPTH_FILES[d].label}
+                      </button>
+                    ))}
+                  </div>
+                  {totalDeps > 0 && (
+                    <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: overBudget ? '#ff3c3c' : '#8cb4d4', marginTop: '8px' }}>
+                      {totalDeps} dep{totalDeps !== 1 ? 's' : ''} × ~{(1 + DEPTH_FILES[fetchDepth].files)} req = ~{estRequests} requests
+                      {overBudget && ` — exceeds remaining budget!`}
+                    </p>
+                  )}
+                </div>
+
+                {/* Over-budget warning */}
+                {overBudget && (
+                  <div className="rounded px-4 py-3" style={{ background: 'rgba(255,60,60,0.06)', border: '1px solid rgba(255,60,60,0.3)' }}>
+                    <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: '#ff3c3c' }}>
+                      ⚠ ~{estRequests} requests needed but only {remaining} remaining. Switch to QUICK depth or add a GitHub token in Config to get 5 000 req/hr.
+                    </p>
+                  </div>
+                )}
+
+              </div>
+            );
+          })()}
+
           {/* Navigation */}
           <div className="flex gap-4 justify-between pt-6" style={{ borderTop: '1px solid rgba(0,212,255,0.08)' }}>
             <button
@@ -320,6 +524,7 @@ export default function DependenciesSetup() {
             </div>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

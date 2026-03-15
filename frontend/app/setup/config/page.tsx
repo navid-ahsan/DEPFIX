@@ -34,6 +34,7 @@ interface UserConfig {
   max_tokens: number;
   system_prompt: string | null;
   preferred_quantization: string;
+  github_token: string | null;
 }
 
 // ── Style atoms ───────────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ const inp: React.CSSProperties = {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function SectionTitle({ children, color = '#00d4ff' }: { children: React.ReactNode; color?: string }) {
+function SectionTitle({ children, color = '#00d4ff', required = false }: { children: React.ReactNode; color?: string; required?: boolean }) {
   return (
     <div style={{
       fontFamily: "'Share Tech Mono', monospace",
@@ -79,8 +80,14 @@ function SectionTitle({ children, color = '#00d4ff' }: { children: React.ReactNo
       marginBottom: '16px',
       paddingBottom: '8px',
       borderBottom: `1px solid ${color}22`,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
     }}>
       {children}
+      {required && (
+        <span style={{ color: '#ff3c3c', fontSize: '13px', lineHeight: 1, marginLeft: '2px' }} title="Required before continuing">*</span>
+      )}
     </div>
   );
 }
@@ -138,7 +145,7 @@ function StatusDot({ status }: { status: 'untested' | 'ok' | 'err' }) {
 // ── CI/CD snippet templates (shown in the webhook card) ─────────────────────
 
 const GH_ACTIONS_SNIPPET = `# .github/workflows/your-workflow.yml  —  add as last step in any job
-# Repo secret required: DEPFIX_URL
+# Repo secrets required: DEPFIX_URL, DEPFIX_API_KEY
 
 - name: Send failure log to DEPFIX
   if: failure()
@@ -152,11 +159,13 @@ const GH_ACTIONS_SNIPPET = `# .github/workflows/your-workflow.yml  —  add as l
       --arg log  "$(cat job.log 2>/dev/null || echo '')" \\
       '{workflow_name:$wf,run_id:$run,repository:$repo,branch:$ref,commit_sha:$sha,conclusion:"failure",log_content:$log}' \\
     | curl -sf -X POST "\${{ secrets.DEPFIX_URL }}/api/v1/webhook/github-actions" \\
-      -H "Content-Type: application/json" -d @-
+      -H "Content-Type: application/json" \\
+      -H "X-API-Key: \${{ secrets.DEPFIX_API_KEY }}" \\
+      -d @-
   # Tip: pipe your build command through: your-cmd 2>&1 | tee job.log`.trim();
 
 const GITLAB_SNIPPET = `# .gitlab-ci.yml  —  add to any job's after_script
-# CI/CD variable required: DEPFIX_URL
+# CI/CD variables required: DEPFIX_URL, DEPFIX_API_KEY
 
 after_script:
   - |
@@ -170,7 +179,9 @@ after_script:
         --arg log  "$(cat job.log 2>/dev/null || echo '')" \\
         '{workflow_name:$wf,run_id:$run,repository:$repo,branch:$ref,commit_sha:$sha,conclusion:"failure",log_content:$log}' \\
       | curl -sf -X POST "\${DEPFIX_URL}/api/v1/webhook/github-actions" \\
-        -H "Content-Type: application/json" -d @-
+        -H "Content-Type: application/json" \\
+        -H "X-API-Key: \${DEPFIX_API_KEY}" \\
+        -d @-
     fi
   # Tip: pipe your build command through: your-cmd 2>&1 | tee job.log`.trim();
 
@@ -206,8 +217,13 @@ export default function ConfigPage() {
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
 
+  // Derived: split models by type
+  const llmModels = ollamaModels.filter(m => !m.name.toLowerCase().includes('embed'));
+  const embedModels = ollamaModels.filter(m => m.name.toLowerCase().includes('embed'));
+
   // Model pull via SSE
   const [pullModel, setPullModel] = useState('');
+  const [pullEmbedModel, setPullEmbedModel] = useState('');
   const [pulling, setPulling] = useState(false);
   const [pullLines, setPullLines] = useState<string[]>([]);
   const [pullDone, setPullDone] = useState(false);
@@ -222,6 +238,11 @@ export default function ConfigPage() {
   const [dockerChecking, setDockerChecking] = useState(false);
 
   // CI/CD webhook tab
+  const [githubToken, setGithubToken] = useState('');
+  const [showGhToken, setShowGhToken] = useState(false);
+  const [savingGhToken, setSavingGhToken] = useState(false);
+  const [ghTokenMsg, setGhTokenMsg] = useState('');
+
   const [ciTab, setCiTab] = useState<'github' | 'gitlab'>('github');
 
   // Save feedback
@@ -265,10 +286,23 @@ export default function ConfigPage() {
       setTemperature(c.temperature);
       setMaxTokens(c.max_tokens);
       setSystemPrompt(c.system_prompt || '');
+      setGithubToken(c.github_token || '');
       fetchOllamaModels();
     } catch {
       // no saved config yet
     }
+  };
+
+  const saveGithubToken = async () => {
+    setSavingGhToken(true);
+    setGhTokenMsg('');
+    try {
+      await axios.put(api('/api/v1/config/'), { github_token: githubToken || null });
+      setGhTokenMsg(githubToken ? 'Token saved. GitHub API rate limit is now 5 000 req/hr.' : 'Token cleared.');
+    } catch {
+      setGhTokenMsg('Save failed.');
+    }
+    setSavingGhToken(false);
   };
 
   const fetchOllamaModels = async () => {
@@ -338,8 +372,9 @@ export default function ConfigPage() {
     }
   };
 
-  const pullNewModel = async () => {
-    if (!pullModel.trim()) return;
+  const pullNewModel = async (tagOverride?: string) => {
+    const tag = (tagOverride ?? pullModel).trim();
+    if (!tag) return;
     setPulling(true);
     setPullLines([]);
     setPullDone(false);
@@ -348,7 +383,7 @@ export default function ConfigPage() {
       const response = await fetch(api('/api/v1/ollama/pull'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: pullModel.trim() }),
+        body: JSON.stringify({ model: tag }),
       });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -398,18 +433,62 @@ export default function ConfigPage() {
         temperature,
         max_tokens: maxTokens,
         system_prompt: systemPrompt || null,
+        github_token: githubToken || null,
       });
       setSaveMsg('Configuration saved.');
-    } catch {
-      setSaveMsg('Failed to save. Is the backend reachable?');
+    } catch (err: unknown) {
+      const msg =
+        axios.isAxiosError(err)
+          ? err.response
+            ? `Save failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`
+            : `Save failed: cannot reach ${getApiBase()} — is the backend running?`
+          : `Save failed: ${String(err)}`;
+      setSaveMsg(msg);
     }
     setSaving(false);
   };
 
   const saveAndContinue = async () => {
-    await saveConfig();
-    router.push('/setup/dependencies');
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      await axios.put(api('/api/v1/config/'), {
+        ollama_url: ollamaUrl,
+        postgres_url: postgresUrl,
+        llm_model: llmModel,
+        embedding_model: embeddingModel,
+        temperature,
+        max_tokens: maxTokens,
+        system_prompt: systemPrompt || null,
+        github_token: githubToken || null,
+      });
+      setSaving(false);
+      router.push('/setup/dependencies');
+    } catch (err: unknown) {
+      const msg =
+        axios.isAxiosError(err)
+          ? err.response
+            ? `Save failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`
+            : `Save failed: cannot reach ${getApiBase()} — is the backend running?`
+          : `Save failed: ${String(err)}`;
+      setSaveMsg(msg);
+      setSaving(false);
+    }
   };
+
+  // ── Required-field gate ───────────────────────────────────────────────────
+  const canContinue =
+    ollamaStatus === 'ok' &&
+    llmModel.trim() !== '' &&
+    embeddingModel.trim() !== '' &&
+    postgresStatus === 'ok';
+
+  const requirements: { label: string; met: boolean }[] = [
+    { label: 'Ollama connected', met: ollamaStatus === 'ok' },
+    { label: 'LLM model selected', met: llmModel.trim() !== '' },
+    { label: 'Embedding model selected', met: embeddingModel.trim() !== '' },
+    { label: 'PostgreSQL connected', met: postgresStatus === 'ok' },
+  ];
 
   const useRecommended = () => {
     if (!hw) return;
@@ -500,7 +579,7 @@ export default function ConfigPage() {
                       ⚠ WSL2 DETECTED — RAM / VRAM MAY BE CAPPED
                     </div>
                     <div style={{ fontFamily: "'Share Tech Mono'", fontSize: '10px', color: '#8cb4d4', lineHeight: '1.5' }}>
-                      WSL2 limits RAM to 50% of host (max 8 GB) by default.
+                      WSL2 limits RAM to 50% of host (max 8 GB) by default.<br />
                       Create <span style={{ color: '#00d4ff' }}>C:\Users\&lt;you&gt;\.wslconfig</span> to increase it:
                     </div>
                     <pre style={{
@@ -574,7 +653,7 @@ export default function ConfigPage() {
 
         {/* ── Ollama Connection ─────────────────────────────────────────── */}
         <div style={{ ...card, marginBottom: '20px' }}>
-          <SectionTitle color="#00d4ff">OLLAMA CONNECTION</SectionTitle>
+          <SectionTitle color="#00d4ff" required>OLLAMA CONNECTION</SectionTitle>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end', marginBottom: '20px' }}>
             <div>
               <label style={lbl}>OLLAMA URL</label>
@@ -611,18 +690,39 @@ export default function ConfigPage() {
             <div>
               <label style={lbl}>AVAILABLE MODELS ({ollamaModels.length})</label>
               <div style={{
-                display: 'flex', flexWrap: 'wrap', gap: '8px',
-                maxHeight: '100px', overflowY: 'auto', padding: '4px 0',
+                display: 'flex', flexDirection: 'column', gap: '6px',
+                maxHeight: '160px', overflowY: 'auto', padding: '4px 0',
               }}>
                 {ollamaModels.map(m => (
-                  <span key={m.name} style={{
-                    fontFamily: "'Share Tech Mono'", fontSize: '10px',
-                    padding: '3px 10px',
+                  <div key={m.name} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '5px 10px',
                     border: '1px solid rgba(0,212,255,0.2)',
-                    borderRadius: '2px', color: '#8cb4d4',
+                    borderRadius: '2px',
                   }}>
-                    {m.name}
-                  </span>
+                    <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '10px', color: '#8cb4d4' }}>
+                      {m.name}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Delete model "${m.name}"?`)) return;
+                        try {
+                          await axios.delete(api(`/api/v1/ollama/model/${encodeURIComponent(m.name)}`));
+                          fetchOllamaModels();
+                        } catch {
+                          alert(`Failed to delete ${m.name}`);
+                        }
+                      }}
+                      title="Delete model"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: '#607898', fontSize: '12px', padding: '0 4px',
+                        lineHeight: 1,
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#ff3c3c')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#607898')}
+                    >✕</button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -637,18 +737,18 @@ export default function ConfigPage() {
 
         {/* ── Model Selection ────────────────────────────────────────────── */}
         <div style={{ ...card, marginBottom: '20px' }}>
-          <SectionTitle color="#00d4ff">MODEL SELECTION</SectionTitle>
+          <SectionTitle color="#00d4ff" required>MODEL SELECTION</SectionTitle>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
               <label style={lbl}>LLM MODEL</label>
-              {ollamaModels.length > 0 ? (
+              {llmModels.length > 0 ? (
                 <select
                   value={llmModel}
                   onChange={e => setLlmModel(e.target.value)}
                   style={{ ...inp, cursor: 'pointer' }}
                 >
                   <option value="">— select a model —</option>
-                  {ollamaModels.map(m => (
+                  {llmModels.map(m => (
                     <option key={m.name} value={m.name}>
                       {m.name}{hw && m.name === hw.recommended.llm ? '  ★ recommended' : ''}
                     </option>
@@ -665,14 +765,14 @@ export default function ConfigPage() {
             </div>
             <div>
               <label style={lbl}>EMBEDDING MODEL</label>
-              {ollamaModels.length > 0 ? (
+              {embedModels.length > 0 ? (
                 <select
                   value={embeddingModel}
                   onChange={e => setEmbeddingModel(e.target.value)}
                   style={{ ...inp, cursor: 'pointer' }}
                 >
                   <option value="">— select a model —</option>
-                  {ollamaModels.map(m => (
+                  {embedModels.map(m => (
                     <option key={m.name} value={m.name}>
                       {m.name}{hw && m.name === hw.recommended.embedding ? '  ★ recommended' : ''}
                     </option>
@@ -698,13 +798,14 @@ export default function ConfigPage() {
         {/* ── Pull New Model ─────────────────────────────────────────────── */}
         <div style={{ ...card, marginBottom: '20px' }}>
           <SectionTitle color="#ffb700">PULL NEW MODEL</SectionTitle>
-          <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '16px' }}>
+
+          {/* LLM sub-section */}
+          <p style={{ fontFamily: "'Share Tech Mono'", fontSize: '10px', letterSpacing: '3px', color: '#ffb700', marginBottom: '8px', marginTop: 0 }}>LLM MODEL</p>
+          <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '10px' }}>
             Enter a full Ollama model tag. Quantization is part of the tag name (e.g.&nbsp;
-            <code style={{ fontFamily: "'Share Tech Mono'", color: '#00d4ff', fontSize: '11px' }}>
-              llama3:8b-instruct-q4_K_M
-            </code>).
+            <code style={{ fontFamily: "'Share Tech Mono'", color: '#00d4ff', fontSize: '11px' }}>llama3:8b-instruct-q4_K_M</code>).
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end', marginBottom: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end', marginBottom: '16px' }}>
             <div>
               <label style={lbl}>MODEL TAG</label>
               <input
@@ -717,6 +818,42 @@ export default function ConfigPage() {
               />
             </div>
             <Btn onClick={pullNewModel} disabled={!pullModel.trim() || pulling} color="#ffb700">
+              {pulling ? 'PULLING…' : 'PULL →'}
+            </Btn>
+          </div>
+
+          {/* Divider */}
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '4px 0 16px' }} />
+
+          {/* Embedding sub-section */}
+          <p style={{ fontFamily: "'Share Tech Mono'", fontSize: '10px', letterSpacing: '3px', color: '#a78bfa', marginBottom: '8px', marginTop: 0 }}>EMBEDDING MODEL</p>
+          <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '10px' }}>
+            Pull a dedicated embedding model. Recommended:&nbsp;
+            <code style={{ fontFamily: "'Share Tech Mono'", color: '#00d4ff', fontSize: '11px' }}>nomic-embed-text</code>
+            &nbsp;or&nbsp;
+            <code style={{ fontFamily: "'Share Tech Mono'", color: '#00d4ff', fontSize: '11px' }}>mxbai-embed-large</code>.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end', marginBottom: '12px' }}>
+            <div>
+              <label style={lbl}>EMBEDDING TAG</label>
+              <input
+                value={pullEmbedModel}
+                onChange={e => { setPullEmbedModel(e.target.value); setModelSizeGb(null); }}
+                onBlur={e => checkModelSize(e.target.value)}
+                placeholder={hw ? hw.recommended.embedding : 'nomic-embed-text'}
+                style={inp}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !pulling && pullEmbedModel.trim()) {
+                    pullNewModel(pullEmbedModel);
+                  }
+                }}
+              />
+            </div>
+            <Btn
+              onClick={() => pullNewModel(pullEmbedModel)}
+              disabled={!pullEmbedModel.trim() || pulling}
+              color="#a78bfa"
+            >
               {pulling ? 'PULLING…' : 'PULL →'}
             </Btn>
           </div>
@@ -816,7 +953,7 @@ export default function ConfigPage() {
 
           {/* Postgres */}
           <div style={card}>
-            <SectionTitle color="#00ff88">POSTGRESQL / PGVECTOR</SectionTitle>
+            <SectionTitle color="#00ff88" required>POSTGRESQL / PGVECTOR</SectionTitle>
             <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '16px' }}>
               PostgreSQL with the pgvector extension is used for embedding storage and similarity search.
             </p>
@@ -894,16 +1031,144 @@ export default function ConfigPage() {
           )}
         </div>
 
+        {/* ── GitHub Personal Access Token ──────────────────────────── */}
+        <div style={{ ...card, marginBottom: '20px' }}>
+          <SectionTitle color="#a78bfa">GITHUB PERSONAL ACCESS TOKEN</SectionTitle>
+          <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '18px' }}>
+            Used when fetching dependency documentation from GitHub. Without a token, the unauthenticated
+            rate limit is only 60 requests/hour — enough for a few libraries. With a token it becomes
+            5 000 requests/hour, which covers any number of dependencies without throttling.
+          </p>
+          <p style={{ fontFamily: "'Exo 2'", fontSize: '11px', color: '#607898', marginTop: 0, marginBottom: '16px' }}>
+            Create one at <span style={{ color: '#00d4ff', fontFamily: "'Share Tech Mono'", fontSize: '11px' }}>github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)</span>.
+            The token only needs <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#00ff88' }}>public_repo</span> (read-only, for public repositories) or no scopes at all for public access.
+          </p>
+          <label style={lbl}>GITHUB TOKEN (ghp_...)</label>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              type={showGhToken ? 'text' : 'password'}
+              value={githubToken}
+              onChange={e => setGithubToken(e.target.value)}
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              style={{
+                ...inp,
+                flex: 1,
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: '12px',
+                letterSpacing: githubToken && !showGhToken ? '2px' : 'normal',
+              }}
+            />
+            <button
+              onClick={() => setShowGhToken(v => !v)}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(167,139,250,0.3)',
+                borderRadius: '4px',
+                color: '#a78bfa',
+                fontSize: '10px',
+                fontFamily: "'Share Tech Mono', monospace",
+                padding: '8px 12px',
+                cursor: 'pointer',
+                letterSpacing: '1px',
+              }}
+            >
+              {showGhToken ? 'HIDE' : 'SHOW'}
+            </button>
+            <button
+              onClick={saveGithubToken}
+              disabled={savingGhToken}
+              style={{
+                background: savingGhToken ? 'transparent' : 'rgba(167,139,250,0.12)',
+                border: '1px solid rgba(167,139,250,0.4)',
+                borderRadius: '4px',
+                color: savingGhToken ? '#607898' : '#a78bfa',
+                fontSize: '10px',
+                fontFamily: "'Share Tech Mono', monospace",
+                padding: '8px 16px',
+                cursor: savingGhToken ? 'not-allowed' : 'pointer',
+                letterSpacing: '1px',
+              }}
+            >
+              {savingGhToken ? 'SAVING...' : 'SAVE TOKEN'}
+            </button>
+          </div>
+          {ghTokenMsg && (
+            <p style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: '10px',
+              color: ghTokenMsg.includes('failed') ? '#ff3c3c' : '#00ff88',
+              marginTop: '8px',
+              marginBottom: 0,
+            }}>
+              {ghTokenMsg}
+            </p>
+          )}
+          {githubToken && (
+            <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#607898', marginTop: '8px', marginBottom: 0 }}>
+              ● Token stored — GitHub API will use authenticated mode (5 000 req/hr)
+            </p>
+          )}
+        </div>
+
         {/* ── CI/CD Webhook Integration ──────────────────────────────── */}
         <div style={{ ...card, marginBottom: '20px' }}>
           <SectionTitle color="#00d4ff">CI / CD WEBHOOK INTEGRATION</SectionTitle>
-          <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '14px' }}>
-            Point your CI/CD pipeline at this endpoint. DEPFIX stores every failure log and makes it
-            available for RAG-powered analysis in the dashboard.
+          <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', marginTop: 0, marginBottom: '18px' }}>
+            Automatically send failure logs to DEPFIX the moment a CI job fails — no manual uploads needed.
           </p>
 
+          {/* Step-by-step guide */}
+          <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[
+              {
+                n: '1',
+                title: 'Generate an API key',
+                body: <>Go to <span style={{ color: '#00d4ff', fontFamily: "'Share Tech Mono'", fontSize: '11px' }}>Dashboard → API Keys</span> and create a new key. Copy it — you'll only see it once.</>,
+              },
+              {
+                n: '2',
+                title: 'Add secrets to your repo',
+                body: <>In your GitHub repo go to <span style={{ color: '#00d4ff', fontFamily: "'Share Tech Mono'", fontSize: '11px' }}>Settings → Secrets → Actions</span> and add:<br />
+                  <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#00ff88' }}>DEPFIX_URL</span> → <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#8cb4d4' }}>{backendUrl || 'http://your-depfix-host:8000'}</span><br />
+                  <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#00ff88' }}>DEPFIX_API_KEY</span> → <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#8cb4d4' }}>depfix_…your key…</span>
+                </>,
+              },
+              {
+                n: '3',
+                title: 'Add the step to your workflow',
+                body: <>Copy the snippet below and paste it as the <strong style={{ color: '#dce8f8' }}>last step</strong> of any job in your <span style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#00d4ff' }}>.github/workflows/your-workflow.yml</span>. The <code style={{ fontFamily: "'Share Tech Mono'", fontSize: '11px', color: '#ffb700' }}>if: failure()</code> condition ensures it only fires on failure.</>,
+              },
+              {
+                n: '4',
+                title: 'Done — logs arrive automatically',
+                body: <>When a job fails, DEPFIX receives the log, runs RAG analysis in the background, and the fix suggestion appears in your <span style={{ color: '#00d4ff', fontFamily: "'Share Tech Mono'", fontSize: '11px' }}>Dashboard → Logs</span>.</>,
+              },
+            ].map(({ n, title, body }) => (
+              <div key={n} style={{
+                display: 'flex', gap: '12px', alignItems: 'flex-start',
+                padding: '10px 14px',
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(0,212,255,0.08)',
+                borderRadius: '3px',
+              }}>
+                <div style={{
+                  flexShrink: 0,
+                  width: '22px', height: '22px',
+                  borderRadius: '50%',
+                  border: '1px solid rgba(0,212,255,0.4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: "'Share Tech Mono'", fontSize: '10px', color: '#00d4ff',
+                }}>{n}</div>
+                <div>
+                  <p style={{ fontFamily: "'Share Tech Mono'", fontSize: '10px', letterSpacing: '2px', color: '#dce8f8', margin: '0 0 4px' }}>{title.toUpperCase()}</p>
+                  <p style={{ fontFamily: "'Exo 2'", fontSize: '12px', color: '#8cb4d4', margin: 0, lineHeight: 1.6 }}>{body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
           {/* Endpoint */}
-          <label style={lbl}>ENDPOINT (POST)</label>
+          <label style={lbl}>WEBHOOK ENDPOINT (POST)</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
             <code style={{
               flex: 1,
@@ -987,32 +1252,74 @@ export default function ConfigPage() {
 
         {/* ── Save / Continue ────────────────────────────────────────────── */}
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
           padding: '22px 24px',
           background: 'rgba(11,15,30,0.85)',
           border: '1px solid rgba(0,212,255,0.12)',
           borderRadius: '4px',
         }}>
-          <div>
-            {saveMsg && (
-              <span style={{
+          {/* Required-section checklist */}
+          {!canContinue && (
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px 16px',
+              background: 'rgba(255,60,60,0.05)',
+              border: '1px solid rgba(255,60,60,0.2)',
+              borderRadius: '3px',
+            }}>
+              <div style={{
                 fontFamily: "'Share Tech Mono'",
-                fontSize: '11px',
-                color: saveMsg.includes('Failed') ? '#ff3c3c' : '#00ff88',
+                fontSize: '9px',
+                letterSpacing: '2px',
+                color: '#ff3c3c',
+                marginBottom: '8px',
               }}>
-                {saveMsg}
-              </span>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <Btn onClick={saveConfig} disabled={saving}>
-              {saving ? 'SAVING…' : 'SAVE CONFIG'}
-            </Btn>
-            <Btn onClick={saveAndContinue} disabled={saving} color="#00ff88">
-              SAVE &amp; CONTINUE →
-            </Btn>
+                COMPLETE REQUIRED SECTIONS * BEFORE CONTINUING
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                {requirements.map(r => (
+                  <div key={r.label} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontFamily: "'Share Tech Mono'",
+                    fontSize: '10px',
+                    color: r.met ? '#00ff88' : '#607898',
+                  }}>
+                    <span style={{ fontSize: '12px' }}>{r.met ? '✓' : '○'}</span>
+                    {r.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              {saveMsg && (
+                <span style={{
+                  fontFamily: "'Share Tech Mono'",
+                  fontSize: '11px',
+                  color: saveMsg.includes('failed') || saveMsg.includes('Failed') ? '#ff3c3c' : '#00ff88',
+                  maxWidth: '500px',
+                  display: 'inline-block',
+                  wordBreak: 'break-word',
+                }}>
+                  {saveMsg}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <Btn onClick={saveConfig} disabled={saving}>
+                {saving ? 'SAVING…' : 'SAVE CONFIG'}
+              </Btn>
+              <Btn
+                onClick={saveAndContinue}
+                disabled={saving || !canContinue}
+                color={canContinue ? '#00ff88' : '#607898'}
+              >
+                SAVE &amp; CONTINUE →
+              </Btn>
+            </div>
           </div>
         </div>
       </main>
