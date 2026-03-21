@@ -17,8 +17,8 @@ export default function Navbar() {
       }}
     >
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        {/* Logo — links to main */}
-        <Link href="/main" className="transition-opacity hover:opacity-75">
+        {/* Logo — links to home */}
+        <Link href="/" className="transition-opacity hover:opacity-75">
           <DepfixLogo iconSize={30} showText={true} />
         </Link>
 

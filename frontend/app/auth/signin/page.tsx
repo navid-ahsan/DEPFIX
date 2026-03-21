@@ -2,6 +2,7 @@
 
 import { signIn } from 'next-auth/react';
 import { useState } from 'react';
+import Link from 'next/link';
 import DepfixLogo from '../../components/DepfixLogo';
 
 export default function SignIn() {
@@ -141,6 +142,24 @@ export default function SignIn() {
           <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: '#1a2840', textAlign: 'center', marginTop: '20px', letterSpacing: '2px' }}>
             demo: test@example.com / test123
           </p>
+
+          <div className="mt-4 flex justify-center">
+            <Link
+              href="/"
+              className="rounded transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#607898',
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: '10px',
+                letterSpacing: '2px',
+                padding: '9px 14px',
+              }}
+            >
+              BACK TO HOME
+            </Link>
+          </div>
         </div>
       </div>
     </div>

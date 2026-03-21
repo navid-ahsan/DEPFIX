@@ -1,0 +1,127 @@
+[
+  {
+    "question": "The PyTorch training script fails in CI with a CUDA error even though it works locally. What is the root cause?",
+    "log_excerpt": "RuntimeError: Found no NVIDIA driver on your system.\nCUDA error: invalid device ordinal\n  File \"train.py\", line 42, in <module>\n    model.cuda()\n",
+    "ground_truth": "The CI runner has no NVIDIA GPU or its CUDA driver version is incompatible with the installed PyTorch. The call to model.cuda() requires an NVIDIA GPU with a driver that supports the CUDA toolkit linked against PyTorch (>=12.1 for torch>=2.6). Fix: (1) add a cpu-only fallback with device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'); (2) pin a CUDA-capable runner in your CI config; or (3) downgrade to the CPU-only torch wheel for CI."
+  },
+  {
+    "question": "How do I fix 'RuntimeError: CUDA error: device-side assert triggered' during a training step?",
+    "log_excerpt": "RuntimeError: CUDA error: device-side assert triggered\n  File \"train.py\", line 87, in train_step\n    loss = criterion(outputs, labels)\nCUDA kernel errors might be asynchronously reported at some other API call",
+    "ground_truth": "A device-side assert is usually caused by out-of-range class labels passed to a loss function such as CrossEntropyLoss. The CUDA error is asynchronous so the real traceback is hidden. Fix: (1) set CUDA_LAUNCH_BLOCKING=1 in CI to get the synchronous traceback; (2) verify that all label values are in [0, num_classes-1]; (3) check for -1 ignore_index values being passed when ignore_index is not configured."
+  },
+  {
+    "question": "The CI pipeline fails during 'pip install tenseal' with a bdist_wheel error. What is the cause?",
+    "log_excerpt": "error: subprocess-exited-with-error\n× python setup.py bdist_wheel did not run successfully.\nnote: This error originates from a subprocess, and is likely not a problem with pip.\n  File \"/usr/local/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py\", line 353, in <module>\n    main()\n",
+    "ground_truth": "TenSEAL must be compiled from source when no binary wheel is available for the Python version / platform. This requires a C++ compiler and cmake. Fix: add 'apt-get update && apt-get install -y build-essential cmake' (or equivalent) before the pip install step in the Dockerfile or CI script."
+  },
+  {
+    "question": "The application crashes on startup with an ImportError related to scikit-learn. What happened?",
+    "log_excerpt": "ImportError: `scikit-learn` requires `numpy` >= 1.22.3 but you have numpy==1.21.0 which is not compatible.\n  File \"main.py\", line 5, in <module>\n    import sklearn\n",
+    "ground_truth": "A transitive dependency installed numpy 1.21.0 which is below scikit-learn's minimum requirement. Fix: (1) pin all direct dependencies in requirements.txt with exact versions; (2) generate a reproducible lockfile with pip-compile (pip-tools); (3) upgrade numpy to >=1.22.3."
+  },
+  {
+    "question": "scikit-learn raises AttributeError: 'NoneType' object has no attribute 'fit' when calling the pipeline. Why?",
+    "log_excerpt": "AttributeError: 'NoneType' object has no attribute 'fit'\n  File \"pipeline.py\", line 31\n    estimator.fit(X_train, y_train)\n",
+    "ground_truth": "The estimator step in the sklearn Pipeline was assigned None, usually because a factory function returned None instead of an estimator instance or a variable was never initialised. Fix: (1) validate that every step in sklearn.pipeline.Pipeline is a tuple of (name, estimator) where estimator is not None; (2) check conditional logic that assigns the estimator — add an assertion after assignment."
+  },
+  {
+    "question": "Flower simulation fails with 'TypeError: the first argument must be callable'. What went wrong?",
+    "log_excerpt": "ERROR: An exception occurred !! the first argument must be callable\n  File \".../vce_api.py\", line 346, in _load\n    return get_load_client_app_fn(\n  File \".../clientApp.py\", line 45, in <module>\n    import MVD.src.segmentationTasks as segmentationTasks\n  File \".../segmentationTasks.py\", line 59, in <module>\n    partial(MeanDice(reduction='mean')),\nTypeError: the first argument must be callable\n",
+    "ground_truth": "functools.partial() expects a callable (class or function) as its first argument, but MeanDice(reduction='mean') is already an instantiated object. Fix: pass the class and keyword arguments separately — partial(MeanDice, reduction='mean') — or drop partial entirely and use MeanDice(include_background=False, reduction='mean') directly."
+  },
+  {
+    "question": "A Flower client app fails to load at simulation start. How do I debug the import error?",
+    "log_excerpt": "ERROR: An exception occurred !! the first argument must be callable\n  File \".../object_ref.py\", line 170, in load_app\n    module = importlib.import_module(module_str)\n  File \"<frozen importlib._bootstrap>\", line 1204, in _gcd_import\n",
+    "ground_truth": "Flower's simulation engine imports the client app module dynamically via importlib. An error at module import time (like a TypeError or SyntaxError at the top level) surfaces as a VCE load failure. Fix: (1) run 'python -c \"import your.client.module\"' locally to reproduce the error outside Flower; (2) move object instantiation into functions or if __name__ == \"__main__\" guards so top-level code cannot fail; (3) use try/except to catch and log the real error inside the module."
+  },
+  {
+    "question": "Flower's VCE (Virtual Client Engine) raises an exception during start_vce. What does this mean?",
+    "log_excerpt": "File \".../vce_api.py\", line 390, in start_vce\n    raise ex\n  File \".../vce_api.py\", line 359, in start_vce\n    client_app = app_fn()\n TypeError: the first argument must be callable",
+    "ground_truth": "The VCE calls app_fn() to instantiate the ClientApp. If the function passed to simulation.start_simulation() (or flwr.simulation.run_simulation) references an object that fails to construct, the VCE rethrows the original error. Fix: ensure the ClientApp factory function is a zero-argument callable that returns a new ClientApp instance each call; no pre-instantiated objects should be passed at module scope."
+  },
+  {
+    "question": "MONAI MeanDice metric raises TypeError when used inside a Flower strategy. How should it be initialised?",
+    "log_excerpt": "partial(MeanDice(reduction='mean')),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: the first argument must be callable",
+    "ground_truth": "MONAI metrics like MeanDice are classes. Wrapping an already-constructed instance in functools.partial() fails because partial expects a callable, not an object. Correct usage: (1) use MeanDice(include_background=False, reduction='mean') directly; (2) if lazy construction is needed, wrap the class: partial(MeanDice, reduction='mean'); (3) in Flower strategies, instantiate metrics inside the aggregation method, not at module scope."
+  },
+  {
+    "question": "MONAI raises a RuntimeError about incompatible tensor shapes during a transform in the data loader. What is the fix?",
+    "log_excerpt": "RuntimeError: Given groups=1, weight of size [64, 1, 3, 3, 3], expected input[2, 3, 96, 96, 96] to have 1 channels, but got 3 channels instead\n  File \"train.py\", line 58, in forward\n    x = self.conv(x)\n",
+    "ground_truth": "The model expects single-channel (grayscale) input but a transform in the MONAI pipeline produced 3-channel data. Common causes: (1) EnsureChannelFirst or RepeatChannel being applied when the image already has 3 channels; (2) using a RGB image source without a Grayscale conversion. Fix: (1) add ScaleIntensity and ensure a single-channel meta-tensor before the model; (2) change the model's first conv in_channels to 3 if the input is truly 3-channel; (3) audit the Compose transform pipeline order."
+  },
+  {
+    "question": "The pipeline failed with 'UnicodeDecodeError: utf-8 codec can't decode byte 0xff'. What should I do?",
+    "log_excerpt": "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte\n  File \"data_loader.py\", line 17, in <module>\n    data = open('data.bin', 'r').read()\n",
+    "ground_truth": "The file 'data.bin' is binary but was opened in text mode ('r'). Fix: open binary files with mode='rb': open('data.bin', 'rb'). If the file is text but uses a non-UTF-8 encoding, specify it explicitly: open('file.txt', encoding='latin-1')."
+  },
+  {
+    "question": "pip install fails with 'ERROR: Could not find a version that satisfies the requirement'. How do I fix this in CI?",
+    "log_excerpt": "ERROR: Could not find a version that satisfies the requirement torch==2.6.0+cu121 (from versions: 2.0.0, 2.0.1, 2.1.0)\nERROR: No matching distribution found for torch==2.6.0+cu121\n",
+    "ground_truth": "The PyTorch CUDA build wheel for torch==2.6.0+cu121 is not hosted on PyPI. CUDA-specific wheels are on the PyTorch index. Fix: add --extra-index-url https://download.pytorch.org/whl/cu121 to the pip install command, or update requirements.txt with --find-links."
+  },
+  {
+    "question": "The requests library raises 'ConnectionError: HTTPSConnectionPool Max retries exceeded'. What is the cause in CI?",
+    "log_excerpt": "requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.example.com', port=443): Max retries exceeded with url: /v1/data\n  File \"client.py\", line 22, in fetch\n    response = requests.get(url, timeout=5)\n",
+    "ground_truth": "The CI runner cannot reach the external host. Common causes: (1) the CI environment blocks outbound HTTPS; (2) DNS resolution fails inside the container; (3) the external service is down. Fix: (1) test with curl from inside the CI container; (2) mock the HTTP call in tests using responses or unittest.mock; (3) increase timeout and add retry logic with urllib3.util.retry.Retry."
+  },
+  {
+    "question": "requests raises SSLError: certificate verify failed. What is the correct fix?",
+    "log_excerpt": "requests.exceptions.SSLError: HTTPSConnectionPool(host='internal.corp', port=443): Max retries exceeded ...\nSSLError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')",
+    "ground_truth": "The CI runner does not trust the server's certificate authority. Fix: (1) add the corporate CA certificate to the system trust store in the CI image (update-ca-certificates); (2) pass verify='/path/to/ca-bundle.crt' to requests.get(); (3) NEVER use verify=False in production — it disables all SSL verification and exposes the connection to MITM attacks."
+  },
+  {
+    "question": "Waitress fails to start with 'socket.error: [Errno 98] Address already in use'. How do I fix this?",
+    "log_excerpt": "socket.error: [Errno 98] Address already in use\n  File \"server.py\", line 14, in <module>\n    serve(app, host='0.0.0.0', port=8080)\n",
+    "ground_truth": "Port 8080 is already bound by another process. Fix: (1) find the conflicting process with lsof -i :8080 or ss -tlnp | grep 8080 and terminate it; (2) change the port in the Waitress serve() call; (3) in tests, use port=0 to let the OS assign an available port."
+  },
+  {
+    "question": "A Pyramid application raises 'HTTPNotFound' for every route after deployment. What is wrong?",
+    "log_excerpt": "pyramid.httpexceptions.HTTPNotFound: The resource could not be found.\nRequest URL: http://app/api/users\n  File \".../router.py\" line 221 in __call__\n    raise HTTPNotFound()\n",
+    "ground_truth": "The route pattern does not match the incoming URL. Common causes: (1) route prefix mismatch — if the app is mounted at /api, the route pattern should not include /api again; (2) route order issue — a catch-all route defined before specific routes shadows them; (3) the view configuration decorator or add_route() call was never called. Fix: use pshell or pviews to inspect registered routes, and verify the route pattern and predicates."
+  },
+  {
+    "question": "torchaudio raises 'RuntimeError: No audio backend is available'. How do I fix this in a headless CI?",
+    "log_excerpt": "RuntimeError: No audio backend is available.\n  File \"preprocess.py\", line 12, in load_audio\n    waveform, sr = torchaudio.load(path)\n",
+    "ground_truth": "torchaudio requires an audio backend (SoundFile, sox, or ffmpeg) at runtime. In a minimal CI Docker image none of these may be installed. Fix: (1) install soundfile: pip install soundfile; (2) or install sox: apt-get install -y sox libsox-dev; (3) set the backend explicitly: torchaudio.set_audio_backend('soundfile')."
+  },
+  {
+    "question": "torchvision raises 'RuntimeError: CUDA out of memory' during image batch processing. What are the options?",
+    "log_excerpt": "RuntimeError: CUDA out of memory. Tried to allocate 2.00 GiB (GPU 0; 11.91 GiB total capacity; 9.87 GiB already allocated)\n  File \"transform.py\", line 44, in process_batch\n    outputs = model(batch.cuda())\n",
+    "ground_truth": "The GPU does not have enough free memory for the batch. Fix: (1) reduce batch_size; (2) use torch.cuda.amp.autocast() for mixed-precision inference to halve memory use; (3) call torch.cuda.empty_cache() between batches; (4) use model.cpu() evaluation if a GPU is not strictly required in CI."
+  },
+  {
+    "question": "scikit-learn raises 'ValueError: could not convert string to float' during model training. What is the fix?",
+    "log_excerpt": "ValueError: could not convert string to float: 'N/A'\n  File \"sklearn/utils/validation.py\" in check_array\n  File \"train.py\", line 29\n    model.fit(X_train, y_train)\n",
+    "ground_truth": "The feature matrix X_train contains non-numeric values ('N/A' strings). scikit-learn estimators expect numeric arrays. Fix: (1) use SimpleImputer or df.replace({'N/A': np.nan}) before fitting; (2) use ColumnTransformer with OneHotEncoder for categorical and StandardScaler for numeric columns; (3) ensure pandas read_csv() uses na_values=['N/A'] so pandas parses them as NaN."
+  },
+  {
+    "question": "A MONAI model loading step fails with 'RuntimeError: Error(s) in loading state_dict'. What does this mean?",
+    "log_excerpt": "RuntimeError: Error(s) in loading state_dict for UNet:\n\tUnexpected key(s) in state_dict: 'model.0.weight'\n\tMissing key(s) in state_dict: 'conv.weight'\n",
+    "ground_truth": "The checkpoint was saved with a different model wrapper (e.g., wrapped in nn.DataParallel or a custom class) than the one used for loading. The key prefix mismatch causes the mismatch. Fix: (1) strip the prefix from state dict keys: {k.replace('model.', ''): v for k, v in sd.items()}; (2) use strict=False in load_state_dict() only temporarily to diagnose; (3) save and load within the same model wrapper class."
+  },
+  {
+    "question": "Flower raises 'grpc.RpcError: StatusCode.UNAVAILABLE' when starting the superlink. How do I fix this?",
+    "log_excerpt": "grpc._channel._InactiveRpcError: <_InactiveRpcError of RPC that terminated with:\n\tstatus = StatusCode.UNAVAILABLE\n\tdetails = \"failed to connect to all addresses\"\n",
+    "ground_truth": "The Flower superlink (server) is not reachable on the expected address/port. Fix: (1) confirm the superlink is running: flwr superlink --insecure; (2) check the server_address argument matches the host and port the superlink was started on; (3) confirm no firewall blocks the gRPC port (default 9091); (4) in simulation mode, use flwr.simulation.run_simulation() instead of client/server mode."
+  },
+  {
+    "question": "pip raises 'DistributionNotFound: No module named pkg_resources' in CI. What is wrong?",
+    "log_excerpt": "Traceback (most recent call last):\n  File \"setup.py\", line 3, in <module>\n    from pkg_resources import parse_version\nDistributionNotFound: No module named 'pkg_resources'\n",
+    "ground_text": "pkg_resources is part of setuptools which may be missing in a minimal Python image. Fix: pip install --upgrade setuptools; or use importlib.metadata (Python 3.8+) instead of pkg_resources for package version inspection."
+  },
+  {
+    "question": "The CI job runs out of disk space during model training with MONAI. What causes this and how do I prevent it?",
+    "log_excerpt": "OSError: [Errno 28] No space left on device\n  File \".../monai/data/utils.py\", line 448, in save_to_disk\n    np.save(fname, data)\n",
+    "ground_truth": "MONAI's persistent dataset or cache writer (PersistentDataset, CacheDataset, SmartCacheDataset) is writing preprocessed tensors to disk and exceeding the CI runner's storage quota. Fix: (1) set cache_dir to a volume with sufficient space; (2) use CacheDataset with cache_rate=0.0 in CI (disables caching); (3) clean up the cache directory between runs; (4) switch to the in-memory Dataset for CI pipelines."
+  },
+  {
+    "question": "A Python subprocess in CI raises 'FileNotFoundError: [Errno 2] No such file or directory' for a binary that is installed. Why?",
+    "log_excerpt": "FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'\n  File \"preprocess.py\", line 18, in convert\n    subprocess.run(['ffmpeg', '-i', input_path, output_path], check=True)\n",
+    "ground_truth": "The binary 'ffmpeg' is not on the PATH inside the CI container even though it may be installed on the host. Fix: (1) add apt-get install -y ffmpeg to the CI job's setup step; (2) use shutil.which('ffmpeg') to verify availability before calling subprocess; (3) pass the full absolute path to the binary."
+  },
+  {
+    "question": "The pipeline ran successfully but I want to confirm there are no errors. Is everything OK?",
+    "log_excerpt": "INFO: All tests passed.\nINFO: Build completed successfully.\nINFO: No errors detected.\n",
+    "ground_truth": "The log contains only INFO-level entries with no ERROR, WARNING, or CRITICAL lines. All tests passed and the build completed. No action is required."
+  }
+]

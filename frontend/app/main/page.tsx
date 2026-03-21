@@ -244,7 +244,7 @@ export default function MainPage() {
   }, []);
 
   const navLinks = [
-    { label: 'HOME', href: '/main', accent: '#00d4ff' },
+    { label: 'HOME', href: '/', accent: '#00d4ff' },
     { label: 'SIGN IN', href: '/auth/signin', accent: '#00ff88' },
     { label: 'DASHBOARD', href: '/dashboard', accent: '#00ff88' },
     { label: 'SYSTEM CONFIG', href: '/setup/config', accent: '#a78bfa' },

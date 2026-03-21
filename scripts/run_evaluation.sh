@@ -8,15 +8,15 @@ set -e
 # Default values
 ENV=${1:-lab_model}
 MODEL=${2:-mistral:7b}
-EVAL_DATASET_PATH="archive/legacy_src/eval_dataset.json"
+EVAL_DATASET_PATH="data/eval_dataset.json"   # 25-case dataset aligned to real log errors
 OUTPUT_DIR="data/outputs"
 
 echo "========================================"
-echo "RAG Evaluation Script"
+echo "RAG Evaluation Script  (RAGAS v0.2.x)"
 echo "========================================"
 echo ""
-echo "Environment: $ENV"
-echo "Model: $MODEL"
+echo "Environment      : $ENV"
+echo "Model            : $MODEL"
 echo "Evaluation Dataset: $EVAL_DATASET_PATH"
 echo ""
 
@@ -35,8 +35,17 @@ fi
 echo "Starting RAG evaluation..."
 echo ""
 
-# Run the evaluation using rag_app.py with --evaluate flag
-python3 src/rag_app.py --env "$ENV" --model "$MODEL" --evaluate
+# Use the fixed RAGAS v0.2.x evaluation script (scripts/run_ragas_eval.py).
+# Key improvements over the legacy rag_app.py --evaluate mode:
+#   • EvaluationDataset + SingleTurnSample (v0.2.x field schema)
+#   • No hard distance threshold — retrieves top-k=5 without filtering
+#   • RunConfig(timeout=900) for local Ollama calls
+#   • Saves data/outputs/eval_results.json with per-metric scores
+python3 scripts/run_ragas_eval.py \
+    --env   "$ENV" \
+    --model "$MODEL" \
+    --eval-data "$EVAL_DATASET_PATH" \
+    --output "$OUTPUT_DIR/eval_results.json"
 
 EVAL_RESULT=$?
 

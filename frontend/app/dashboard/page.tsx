@@ -78,7 +78,7 @@ export default function Dashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.push('/main');
+    if (status === 'unauthenticated') router.push('/');
   }, [status, router]);
 
   useEffect(() => {

@@ -5,7 +5,7 @@ Parses user input to understand intent and extract tech stack hints
 
 import re
 from typing import Set, Optional
-from .base import BaseAgent, AgentContext
+from .base import BaseAgent, AgentContext, AgentContract, RetryPolicy, FallbackPolicy
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,19 @@ class IntentAnalyzerAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="IntentAnalyzer",
-            description="Analyzes user input intent and extracts tech stack hints"
+            description="Analyzes user input intent and extracts tech stack hints",
+            contract=AgentContract(
+                input_schema={"user_intent": "str"},
+                output_schema={
+                    "metadata.intent_type": "str",
+                    "metadata.problem_type": "str",
+                    "detected_tech_stack": "dict[str, str]",
+                },
+                required_inputs=["user_intent"],
+                success_criteria="Intent classified and metadata fields populated",
+                retry_policy=RetryPolicy(max_attempts=1, backoff_ms=0),
+                fallback_policy=FallbackPolicy(mode="fail"),
+            ),
         )
 
     async def validate_input(self, context: AgentContext) -> bool:

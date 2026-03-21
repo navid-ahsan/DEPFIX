@@ -7,9 +7,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from time import perf_counter
 import logging
 
 from .config import get_settings
+from .core.observability import record_request
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -77,6 +79,20 @@ def create_app() -> FastAPI:
             content={"detail": "Internal server error", "error": str(exc) if settings.debug else "Unknown error"}
         )
 
+    @app.middleware("http")
+    async def request_metrics_middleware(request: Request, call_next):
+        start = perf_counter()
+        response = await call_next(request)
+        latency_ms = (perf_counter() - start) * 1000
+        record_request(
+            path=request.url.path,
+            method=request.method,
+            status_code=response.status_code,
+            latency_ms=latency_ms,
+        )
+        response.headers["X-Process-Time-Ms"] = str(round(latency_ms, 2))
+        return response
+
     # Health check endpoint
     @app.get("/health", tags=["Health"])
     async def health_check():
@@ -103,7 +119,7 @@ def create_app() -> FastAPI:
         }
 
     # Include routers
-    from .api import logs, dependencies, rag, integrations, analysis, setup, embedding, github
+    from .api import logs, dependencies, rag, integrations, analysis, setup, embedding, github, agent_runs
     from .api import config as config_api, system as system_api, ollama_routes, webhook, auth_keys
     app.include_router(logs.router)
     app.include_router(dependencies.router)
@@ -113,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(setup.router)
     app.include_router(embedding.router)
     app.include_router(github.router)
+    app.include_router(agent_runs.router)
     app.include_router(config_api.router)
     app.include_router(system_api.router)
     app.include_router(ollama_routes.router)

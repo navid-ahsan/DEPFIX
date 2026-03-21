@@ -33,11 +33,12 @@ DEPFIX runs entirely on your own hardware. When a CI/CD job fails, it ships the 
 ## Features
 
 - **RAG Engine** — pgvector similarity search over scraped library docs (PyTorch, MONAI, scikit-learn, TorchAudio, TorchVision, TensorSeal, Waitress, Requests, Pyramid, …)
-- **Multi-Agent Architecture** — orchestrator routes between intent analysis, dependency resolution, error extraction, and solution generation agents
+- **Multi-Agent Architecture** — orchestrator routes between intent analysis, dependency resolution, error extraction, and solution generation agents; answers include confidence score and source evidence citations
 - **Ollama Integration** — run any local model (Llama, Mistral, Gemma, …); model pull + VRAM recommendation built in
 - **GitHub Actions & GitLab CI** — one-step webhook integration; failure logs arrive automatically
-- **Drag-and-Drop Dashboard** — paste or drop a log directly; session history; connection status bar
-- **Setup Wizard** — 6-step guided setup with hardware detection, WSL2 warnings, Docker health check
+- **Drag-and-Drop Dashboard** — paste or drop a log directly; session history; connection status bar; inline log viewer
+- **Run Inspector** — browse all agent runs at `/runs`; drill into per-run detail (`/runs/[id]`) with step-by-step latency, retry count, fallback count, and per-step error text
+- **Setup Wizard** — 6-step guided setup with hardware detection, WSL2 warnings, Docker health check, and rate-limit-aware dependency doc fetching
 - **Local-First** — PostgreSQL + pgvector on Docker; no external API keys required
 
 ---
@@ -76,7 +77,7 @@ Open **http://localhost:3000** — the setup wizard will guide you through the r
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Next.js 14 Frontend  (App Router, dark DEPFIX UI)  │
-│  /main  /setup/*  /dashboard                        │
+│  /main  /setup/*  /dashboard  /runs  /runs/[id]     │
 └────────────────────┬────────────────────────────────┘
                      │ REST / SSE
 ┌────────────────────▼────────────────────────────────┐

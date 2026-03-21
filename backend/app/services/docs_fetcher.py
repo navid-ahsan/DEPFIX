@@ -53,6 +53,38 @@ DEPTH_PRESETS: dict[str, int] = {
 }
 
 
+async def check_rate_limit(github_token: Optional[str] = None) -> dict:
+    """Return current GitHub API rate limit (remaining, limit, reset_at, reset_in_sec).
+
+    Uses the stored/env token when provided.  Falls back to anonymous if none.
+    """
+    import time as _time
+    headers: dict = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "DEPFIX/1.0",
+    }
+    token = github_token or os.getenv("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get("https://api.github.com/rate_limit", headers=headers)
+        if resp.status_code == 200:
+            data = resp.json().get("rate", {})
+            remaining = data.get("remaining", 0)
+            reset_at = data.get("reset", 0)
+            return {
+                "remaining": remaining,
+                "limit": data.get("limit", 60),
+                "reset_at": reset_at,
+                "reset_in_sec": max(0, int(reset_at - _time.time())),
+            }
+    except Exception:
+        pass
+    return {"remaining": 0, "limit": 60, "reset_at": 0, "reset_in_sec": 3600}
+
+
 def _candidate_priority(path: str) -> int:
     """
     Return sort key for candidate file paths (lower = fetched first).

@@ -155,7 +155,55 @@ async def select_deps_endpoint(
                 _fetch_status[user_id][dep_name] = result
             except Exception as exc:
                 _fetch_status[user_id][dep_name] = {"status": "error", "message": str(exc), "chunks": 0, "files": 0, "requests_used": 0}
+    async def _do_fetch() -> None:
+        import asyncio
+        from backend.app.services.docs_fetcher import (
+            fetch_and_save_docs, resolve_github_url, check_rate_limit,
+        )
+        from pathlib import Path
 
+        known_urls = {k: v.get("repository_url") for k, v in AVAILABLE_DEPENDENCIES.items()}
+
+        for dep_name in all_dep_names:
+            _fetch_status[user_id][dep_name]["status"] = "fetching"
+            try:
+                # ── pre-fetch rate-limit guard ──────────────────────────────
+                rl = await check_rate_limit(github_token)
+                needed = max_files + 2  # 1 tree request + file requests
+                if rl["remaining"] < needed:
+                    wait_secs = rl["reset_in_sec"] + 10  # small buffer
+                    reset_min = max(1, wait_secs // 60)
+                    _fetch_status[user_id][dep_name]["status"] = "pending"
+                    _fetch_status[user_id][dep_name]["message"] = (
+                        f"Rate limited — pausing {reset_min} min then continuing"
+                    )
+                    # Wait for the rate limit window to reset, then retry
+                    await asyncio.sleep(min(wait_secs, 3660))
+                    _fetch_status[user_id][dep_name]["status"] = "fetching"
+                    _fetch_status[user_id][dep_name].pop("message", None)
+
+                repo_url = await resolve_github_url(
+                    dep_name,
+                    custom_repo_url=custom_url_map.get(dep_name),
+                    known_urls=known_urls,
+                )
+                if repo_url:
+                    result = await fetch_and_save_docs(dep_name, repo_url, github_token, max_files=max_files)
+                else:
+                    local = Path(f"data/documents/{dep_name}.jsonl")
+                    if local.exists():
+                        result = {"status": "done", "chunks": 0, "files": 0, "requests_used": 0, "source": "local"}
+                    else:
+                        result = {
+                            "status": "warning",
+                            "message": "No GitHub URL found and no local docs available",
+                            "chunks": 0, "files": 0, "requests_used": 0,
+                        }
+                _fetch_status[user_id][dep_name] = result
+            except Exception as exc:
+                _fetch_status[user_id][dep_name] = {
+                    "status": "error", "message": str(exc), "chunks": 0, "files": 0, "requests_used": 0,
+                }
     background_tasks.add_task(_do_fetch)
 
     doc_availability = check_doc_availability(request.dependency_names)

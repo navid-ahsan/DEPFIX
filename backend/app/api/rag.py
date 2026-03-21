@@ -5,10 +5,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import uuid
 import logging
 from backend.app.database import get_db
 from backend.app.services.rag_service import RAGEngine, PipelineNotReadyError
-from backend.app.models.database import Query, Log
+from backend.app.models.database import Query, Log, AgentRun, AgentRunStep
 from backend.app.agents import OrchestratorAgent
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,120 @@ router = APIRouter(prefix="/api/v1/rag", tags=["rag"])
 
 # Hardcoded user for now (TODO: Get from NextAuth session)
 CURRENT_USER_ID = "test-user-123"
+
+DEFAULT_BUDGET = {
+    "max_seconds": 120,
+    "max_steps": 10,
+    "max_github_api_calls": 500,
+    "max_ollama_models_loaded": 2,
+}
+
+POLICY_ALLOWED_AGENTS = {
+    "read-only": [
+        "IntentAnalyzer", "DependencyExtractor", "DocScraper", "DataCleaner",
+        "VectorManager", "ErrorAnalyzer", "SolutionGenerator", "Evaluator",
+    ],
+    "suggest-only": [
+        "IntentAnalyzer", "DependencyExtractor", "DocScraper", "DataCleaner",
+        "VectorManager", "ErrorAnalyzer", "SolutionGenerator", "CodeSuggester", "Evaluator",
+    ],
+    "sandbox-auto-apply": [
+        "IntentAnalyzer", "DependencyExtractor", "DocScraper", "DataCleaner",
+        "VectorManager", "ErrorAnalyzer", "SolutionGenerator", "CodeSuggester",
+        "ApprovalManager", "CodeExecutor", "Evaluator",
+    ],
+    "branch-only-after-approval": [
+        "IntentAnalyzer", "DependencyExtractor", "DocScraper", "DataCleaner",
+        "VectorManager", "ErrorAnalyzer", "SolutionGenerator", "CodeSuggester",
+        "ApprovalManager", "CodeExecutor", "Evaluator",
+    ],
+}
+
+
+def _build_agent_registry() -> Dict[str, Any]:
+    from backend.app.agents import (
+        IntentAnalyzerAgent,
+        DependencyExtractorAgent,
+        DocScraperAgent,
+        DataCleanerAgent,
+        VectorManagerAgent,
+        ErrorAnalyzerAgent,
+        SolutionGeneratorAgent,
+        CodeSuggesterAgent,
+        ApprovalManagerAgent,
+        CodeExecutorAgent,
+        EvaluatorAgent,
+    )
+
+    return {
+        "IntentAnalyzer": IntentAnalyzerAgent,
+        "DependencyExtractor": DependencyExtractorAgent,
+        "DocScraper": DocScraperAgent,
+        "DataCleaner": DataCleanerAgent,
+        "VectorManager": VectorManagerAgent,
+        "ErrorAnalyzer": ErrorAnalyzerAgent,
+        "SolutionGenerator": SolutionGeneratorAgent,
+        "CodeSuggester": CodeSuggesterAgent,
+        "ApprovalManager": ApprovalManagerAgent,
+        "CodeExecutor": CodeExecutorAgent,
+        "Evaluator": EvaluatorAgent,
+    }
+
+
+def _build_dynamic_plan(request: "PlanRequest") -> Dict[str, Any]:
+    query = (request.query_text or "").lower()
+    deps_count = len(request.dependencies or [])
+    has_error_signal = bool(request.log_id) or any(
+        kw in query for kw in ["error", "exception", "traceback", "failed", "crash"]
+    )
+
+    plan = ["IntentAnalyzer", "DependencyExtractor"]
+    reasoning = [
+        "Always classify intent and normalize dependencies first.",
+    ]
+
+    if deps_count <= 12:
+        plan.extend(["DocScraper", "DataCleaner", "VectorManager"])
+        reasoning.append("Dependency count is manageable, so refresh/reindex docs in-line.")
+    else:
+        reasoning.append("Large dependency set detected; skipping inline scrape to reduce latency.")
+
+    if has_error_signal:
+        plan.append("ErrorAnalyzer")
+        reasoning.append("Error signal detected, so include ErrorAnalyzer.")
+
+    plan.append("SolutionGenerator")
+
+    if request.intent in {"automatic_fix", "fix"}:
+        plan.extend(["CodeSuggester", "ApprovalManager"])
+        reasoning.append("Fix intent detected, so include suggestion and approval flow.")
+
+    plan.append("Evaluator")
+
+    budget = dict(DEFAULT_BUDGET)
+    if request.budget:
+        budget.update(request.budget)
+
+    return {
+        "execution_plan": plan,
+        "reasoning": reasoning,
+        "budget": budget,
+    }
+
+
+def _apply_policy_guardrails(execution_plan: List[str], policy_mode: str) -> List[str]:
+    allowed = POLICY_ALLOWED_AGENTS.get(policy_mode, POLICY_ALLOWED_AGENTS["suggest-only"])
+    return [step for step in execution_plan if step in allowed]
+
+
+def _summarize_context_for_step(context: Any, agent_name: str) -> Dict[str, Any]:
+    return {
+        "agent": agent_name,
+        "has_solution": bool(getattr(context, "solution", None)),
+        "has_parsed_error": bool(getattr(context, "parsed_error", None)),
+        "detected_tech_stack_count": len(getattr(context, "detected_tech_stack", {}) or {}),
+        "suggested_fixes_count": len(getattr(context, "suggested_fixes", []) or []),
+    }
 
 
 # ==================== REQUEST MODELS ====================
@@ -27,7 +142,195 @@ class AnalyzeErrorLogRequest(BaseModel):
     dependencies: Optional[List[str]] = None
 
 
+class PlanRequest(BaseModel):
+    """Planner request that produces a dynamic execution plan."""
+    query_text: str
+    dependencies: List[str] = []
+    log_id: Optional[str] = None
+    intent: str = "guidance"
+    policy_mode: str = "suggest-only"  # read-only | suggest-only | sandbox-auto-apply | branch-only-after-approval
+    budget: Optional[Dict[str, Any]] = None
+
+
+class ExecutePlanRequest(BaseModel):
+    """Executor request with explicit plan and governance controls."""
+    query_text: str
+    dependencies: List[str] = []
+    intent: str = "guidance"
+    policy_mode: str = "suggest-only"
+    log_id: Optional[str] = None
+    execution_plan: List[str]
+    budget: Optional[Dict[str, Any]] = None
+
+
 # ==================== PHASE 4: ERROR LOG ANALYSIS & RAG ====================
+
+async def _execute_plan_internal(
+    *,
+    query_text: str,
+    dependencies: List[str],
+    intent: str,
+    policy_mode: str,
+    log_id: Optional[str],
+    execution_plan: List[str],
+    budget: Optional[Dict[str, Any]],
+    db: Session,
+) -> Dict[str, Any]:
+    from backend.app.agents import AgentContext
+
+    merged_budget = dict(DEFAULT_BUDGET)
+    if budget:
+        merged_budget.update(budget)
+
+    guarded_plan = _apply_policy_guardrails(execution_plan, policy_mode)
+    if not guarded_plan:
+        raise HTTPException(status_code=400, detail="Execution plan has no allowed steps for the selected policy mode")
+
+    max_steps = int(merged_budget.get("max_steps", 10))
+    if len(guarded_plan) > max_steps:
+        guarded_plan = guarded_plan[:max_steps]
+
+    agent_registry = _build_agent_registry()
+
+    run = AgentRun(
+        id=str(uuid.uuid4()),
+        user_id=CURRENT_USER_ID,
+        query_text=query_text,
+        intent=intent,
+        selected_dependencies=dependencies,
+        execution_plan=guarded_plan,
+        status="running",
+        run_graph={
+            "type": "sequence",
+            "nodes": guarded_plan,
+            "policy_mode": policy_mode,
+        },
+        budget=merged_budget,
+        started_at=datetime.utcnow(),
+    )
+    db.add(run)
+    db.flush()
+
+    orchestrator = OrchestratorAgent()
+    for name in guarded_plan:
+        agent_class = agent_registry.get(name)
+        if agent_class:
+            orchestrator.register_agent(agent_class())
+    orchestrator.set_execution_plan(guarded_plan)
+
+    context = AgentContext(
+        user_intent=query_text,
+        dependencies=dependencies,
+        user_id=CURRENT_USER_ID,
+    )
+    context.metadata["run_id"] = run.id
+    context.metadata["policy_mode"] = policy_mode
+    context.metadata["budget"] = merged_budget
+    if log_id:
+        context.error_log = log_id
+
+    context = await orchestrator.execute(context)
+
+    trace_rows = context.metadata.get("execution_trace", [])
+    trace_by_agent = {row.get("agent"): row for row in trace_rows if row.get("agent")}
+
+    for idx, agent_name in enumerate(guarded_plan, start=1):
+        trace = trace_by_agent.get(agent_name, {})
+        latency_ms = trace.get("latency_ms")
+        status_value = trace.get("status", "skipped")
+
+        step = AgentRunStep(
+            id=str(uuid.uuid4()),
+            run_id=run.id,
+            step_order=idx,
+            agent_name=agent_name,
+            status=status_value,
+            latency_ms=int(latency_ms) if latency_ms is not None else None,
+            retry_count=trace.get("retry_count", 0),
+            input_snapshot={"policy_mode": policy_mode},
+            output_summary={
+                **_summarize_context_for_step(context, agent_name),
+                "fallback_applied": trace.get("fallback_applied", False),
+            },
+            tool_calls=[],
+            artifacts=[],
+            error_text=trace.get("reason") if status_value in {"failed", "fallback"} else None,
+        )
+        db.add(step)
+
+    run.status = "completed" if orchestrator.status.value == "completed" else "failed"
+    run.ended_at = datetime.utcnow()
+    run.metrics = {
+        "orchestration_total_ms": context.metadata.get("orchestration_total_ms"),
+        "agent_timings_ms": context.metadata.get("agent_timings_ms", {}),
+        "message_count": len(context.messages),
+        "fallback_count": len(context.metadata.get("fallbacks", [])),
+    }
+    if run.status != "completed":
+        run.error_text = "\n".join(context.messages)[-4000:]
+
+    db.commit()
+
+    return {
+        "run": run,
+        "context": context,
+        "execution_plan": guarded_plan,
+        "policy_mode": policy_mode,
+    }
+
+
+@router.post("/plan")
+async def plan_rag_run(request: PlanRequest):
+    """Build dynamic plan from query context and apply policy guardrails."""
+    planned = _build_dynamic_plan(request)
+    guarded = _apply_policy_guardrails(planned["execution_plan"], request.policy_mode)
+    return {
+        "status": "success",
+        "query": request.query_text,
+        "intent": request.intent,
+        "policy_mode": request.policy_mode,
+        "execution_plan": guarded,
+        "planner_reasoning": planned["reasoning"],
+        "budget": planned["budget"],
+        "estimated_steps": len(guarded),
+    }
+
+
+@router.post("/execute-plan")
+async def execute_rag_plan(request: ExecutePlanRequest, db: Session = Depends(get_db)):
+    """Execute provided plan with bounded autonomy and persistent run tracking."""
+    try:
+        result = await _execute_plan_internal(
+            query_text=request.query_text,
+            dependencies=request.dependencies,
+            intent=request.intent,
+            policy_mode=request.policy_mode,
+            log_id=request.log_id,
+            execution_plan=request.execution_plan,
+            budget=request.budget,
+            db=db,
+        )
+        run = result["run"]
+        context = result["context"]
+
+        return {
+            "status": "success",
+            "run_id": run.id,
+            "policy_mode": result["policy_mode"],
+            "execution_plan": result["execution_plan"],
+            "response": context.solution,
+            "parsed_error": context.parsed_error,
+            "suggested_fixes": context.suggested_fixes,
+            "metadata": context.metadata,
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.error("Plan execution failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Execution failed: {exc}")
+
 
 @router.post("/analyze-error-log")
 async def analyze_error_log(
@@ -305,6 +608,7 @@ async def rag_query(
     dependencies: List[str],
     log_id: Optional[str] = None,
     intent: str = "guidance",
+    db: Session = Depends(get_db),
 ) -> dict:
     """Execute a RAG query with retrieved context and LLM generation.
 
@@ -318,51 +622,30 @@ async def rag_query(
         Generated response with retrieved context
     """
     try:
-        # Build orchestrator with all agents
-        from backend.app.agents import (
-            IntentAnalyzerAgent,
-            DependencyExtractorAgent,
-            DocScraperAgent,
-            DataCleanerAgent,
-            VectorManagerAgent,
-            ErrorAnalyzerAgent,
-            SolutionGeneratorAgent,
-            AgentContext,
+        planned = _build_dynamic_plan(
+            PlanRequest(
+                query_text=query_text,
+                dependencies=dependencies,
+                log_id=log_id,
+                intent=intent,
+                policy_mode="suggest-only",
+                budget=None,
+            )
         )
 
-        orchestrator = OrchestratorAgent()
-        # register all agents in the desired order
-        for AgentClass in [
-            IntentAnalyzerAgent,
-            DependencyExtractorAgent,
-            DocScraperAgent,
-            DataCleanerAgent,
-            VectorManagerAgent,
-            ErrorAnalyzerAgent,
-            SolutionGeneratorAgent,
-        ]:
-            orchestrator.register_agent(AgentClass())
-
-        orchestrator.set_execution_plan([
-            "IntentAnalyzer",
-            "DependencyExtractor",
-            "DocScraper",
-            "DataCleaner",
-            "VectorManager",
-            "ErrorAnalyzer",
-            "SolutionGenerator",
-        ])
-
-        # prepare shared context
-        context = AgentContext(
-            user_intent=query_text,
+        exec_result = await _execute_plan_internal(
+            query_text=query_text,
             dependencies=dependencies,
+            intent=intent,
+            policy_mode="suggest-only",
+            log_id=log_id,
+            execution_plan=planned["execution_plan"],
+            budget=planned["budget"],
+            db=db,
         )
-        if log_id:
-            # placeholder: load log by id from storage
-            context.error_log = log_id
 
-        context = await orchestrator.execute(context)
+        run = exec_result["run"]
+        context = exec_result["context"]
 
         query_id = f"query_{datetime.utcnow().timestamp()}"
 
@@ -376,10 +659,12 @@ async def rag_query(
             "parsed_error": context.parsed_error,
             "scraped_libraries": list(context.scraped_docs.keys()) if context.scraped_docs else [],
             "metadata": context.metadata,
+            "run_id": run.id,
             "generated_at": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
+        db.rollback()
         logger.error(f"Error processing RAG query: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

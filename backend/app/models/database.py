@@ -28,6 +28,7 @@ class User(Base):
     # Relationships
     logs = relationship("Log", back_populates="user", cascade="all, delete-orphan")
     queries = relationship("Query", back_populates="user", cascade="all, delete-orphan")
+    agent_runs = relationship("AgentRun", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User {self.username}>"
@@ -302,3 +303,53 @@ class UserConfig(Base):
 
     def __repr__(self) -> str:
         return f"<UserConfig user={self.user_id}>"
+
+
+class AgentRun(Base):
+    """Persistent orchestration run metadata for replay/debug/inspection."""
+
+    __tablename__ = "agent_runs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    query_text = Column(Text, nullable=False)
+    intent = Column(String(50), default="guidance", index=True)
+    selected_dependencies = Column(JSON, nullable=True)
+    execution_plan = Column(JSON, nullable=True)  # ordered list of agent names
+
+    status = Column(String(32), default="running", index=True)  # running/completed/failed
+    run_graph = Column(JSON, nullable=True)  # structure for future DAG mode
+    budget = Column(JSON, nullable=True)  # {max_seconds, max_api_calls, ...}
+    metrics = Column(JSON, nullable=True)  # aggregate timings/quality metadata
+    error_text = Column(Text, nullable=True)
+
+    started_at = Column(DateTime, default=datetime.utcnow, index=True)
+    ended_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="agent_runs")
+    steps = relationship("AgentRunStep", back_populates="run", cascade="all, delete-orphan")
+
+
+class AgentRunStep(Base):
+    """Per-agent execution record for a run."""
+
+    __tablename__ = "agent_run_steps"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id = Column(String(36), ForeignKey("agent_runs.id"), nullable=False, index=True)
+    step_order = Column(Integer, nullable=False)
+    agent_name = Column(String(120), nullable=False, index=True)
+
+    status = Column(String(32), default="pending", index=True)  # pending/running/completed/failed/skipped
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    retry_count = Column(Integer, default=0)
+
+    input_snapshot = Column(JSON, nullable=True)
+    output_summary = Column(JSON, nullable=True)
+    tool_calls = Column(JSON, nullable=True)  # reserved for future tool-level tracing
+    artifacts = Column(JSON, nullable=True)  # e.g. generated patches, test logs
+    error_text = Column(Text, nullable=True)
+
+    run = relationship("AgentRun", back_populates="steps")

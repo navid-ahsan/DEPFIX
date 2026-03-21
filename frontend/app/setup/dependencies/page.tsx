@@ -57,6 +57,20 @@ export default function DependenciesSetup() {
     full:     { files: 80, label: 'FULL · 80 files · ~81 req/dep' },
   };
 
+  const normalizeUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `https://${url}`;
+  };
+
+  const openDocs = (e: React.MouseEvent, url: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const safeUrl = normalizeUrl(url);
+    if (!safeUrl) return;
+    window.open(safeUrl, '_blank', 'noopener,noreferrer');
+  };
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/auth/signin');
@@ -326,9 +340,14 @@ export default function DependenciesSetup() {
                             </div>
                             <p className="text-xs mt-1" style={{ color: '#8cb4d4' }}>{dep.description}</p>
                             {dep.documentation_url && (
-                              <a href={dep.documentation_url} target="_blank" rel="noopener noreferrer"
-                                className="text-xs mt-1 inline-block" style={{ color: '#00d4ff' }}
-                                onClick={(e) => e.stopPropagation()}>
+                              <a
+                                href={normalizeUrl(dep.documentation_url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs mt-1 inline-block"
+                                style={{ color: '#00d4ff' }}
+                                onClick={(e) => openDocs(e, dep.documentation_url)}
+                              >
                                 docs →
                               </a>
                             )}

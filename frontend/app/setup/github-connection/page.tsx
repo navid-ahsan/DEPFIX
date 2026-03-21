@@ -18,6 +18,12 @@ interface ErrorLog {
   created_at: string;
 }
 
+interface ErrorLogDetails extends ErrorLog {
+  content: string;
+  file_size_bytes?: number;
+  error_summary?: Record<string, unknown>;
+}
+
 export default function GitHubConnection() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -27,6 +33,8 @@ export default function GitHubConnection() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [uploadedLogs, setUploadedLogs] = useState<ErrorLog[]>([]);
+  const [selectedLog, setSelectedLog] = useState<ErrorLogDetails | null>(null);
+  const [viewingLog, setViewingLog] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -129,6 +137,23 @@ export default function GitHubConnection() {
     router.push(`/setup/rag-analysis?log_id=${logId}`);
   };
 
+  const handleViewLog = async (logId: string) => {
+    setError(null);
+    setViewingLog(true);
+    try {
+      const response = await axios.get(api(`/api/v1/logs/${logId}`), {
+        headers: {
+          Authorization: `Bearer ${session?.accessToken}`,
+        },
+      });
+      setSelectedLog(response.data);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load log file');
+    } finally {
+      setViewingLog(false);
+    }
+  };
+
   if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen depfix-grid-bg flex items-center justify-center" style={{ background: '#060810' }}>
@@ -227,6 +252,16 @@ export default function GitHubConnection() {
                   </div>
                   <div className="flex gap-2">
                     <button
+                      onClick={() => handleViewLog(log.id)}
+                      className="rounded text-xs transition-all"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.2)', color: '#dce8f8', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '1px', padding: '6px 14px' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                      disabled={viewingLog}
+                    >
+                      VIEW
+                    </button>
+                    <button
                       onClick={() => handleAnalyzeLog(log.id)}
                       className="rounded text-xs transition-all"
                       style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '1px', padding: '6px 14px' }}
@@ -248,6 +283,27 @@ export default function GitHubConnection() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* What happens next */}
+        {selectedLog && (
+          <div className="mb-8 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(255,255,255,0.12)' }}>
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '11px', color: '#dce8f8', letterSpacing: '1.5px' }}>
+                LOG FILE: {selectedLog.filename}
+              </p>
+              <button
+                onClick={() => setSelectedLog(null)}
+                className="rounded text-xs"
+                style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.35)', color: '#ff7f7f', fontFamily: "'Share Tech Mono', monospace", padding: '4px 10px' }}
+              >
+                CLOSE
+              </button>
+            </div>
+            <pre className="p-4 overflow-auto max-h-[360px]" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '11px', lineHeight: 1.45, color: '#8cb4d4' }}>
+{selectedLog.content || '(empty log content)'}
+            </pre>
           </div>
         )}
 

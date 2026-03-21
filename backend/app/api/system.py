@@ -1,13 +1,23 @@
 """System hardware detection and LLM model recommendations."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 import logging
 import platform
 import subprocess
 import shutil
+import httpx
+from sqlalchemy.orm import Session
+
+from backend.app.core.observability import (
+    get_process_memory_snapshot,
+    get_request_metrics_snapshot,
+)
+from backend.app.database import get_db
+from backend.app.models.database import UserConfig
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 logger = logging.getLogger(__name__)
+CURRENT_USER_ID = "test-user-123"
 
 
 def _detect_gpu() -> dict:
@@ -146,3 +156,63 @@ async def docker_health():
         return {"docker_installed": True, "containers": [], "error": "docker ps timed out"}
     except Exception as exc:
         return {"docker_installed": True, "containers": [], "error": str(exc)}
+
+
+@router.get("/runtime-metrics")
+async def runtime_metrics(db: Session = Depends(get_db)):
+    """Return latency, memory, and model size telemetry for observability."""
+    request_metrics = get_request_metrics_snapshot()
+    memory_metrics = get_process_memory_snapshot()
+
+    config = db.query(UserConfig).filter(UserConfig.user_id == CURRENT_USER_ID).first()
+    ollama_url = (config.ollama_url if config and config.ollama_url else "http://localhost:11434").rstrip("/")
+
+    model_metrics = {
+        "ollama_url": ollama_url,
+        "installed_model_count": 0,
+        "installed_total_size_bytes": 0,
+        "installed_total_size_gb": 0.0,
+        "running_model_count": 0,
+        "running_models": [],
+        "error": None,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            tags_resp = await client.get(f"{ollama_url}/api/tags")
+            tags_resp.raise_for_status()
+            tags_data = tags_resp.json()
+
+            installed_models = tags_data.get("models", [])
+            total_size_bytes = sum(int(m.get("size", 0) or 0) for m in installed_models)
+
+            model_metrics["installed_model_count"] = len(installed_models)
+            model_metrics["installed_total_size_bytes"] = total_size_bytes
+            model_metrics["installed_total_size_gb"] = round(total_size_bytes / (1024 ** 3), 2)
+
+            try:
+                ps_resp = await client.get(f"{ollama_url}/api/ps")
+                if ps_resp.status_code == 200:
+                    ps_data = ps_resp.json()
+                    running = ps_data.get("models", [])
+                    model_metrics["running_model_count"] = len(running)
+                    model_metrics["running_models"] = [
+                        {
+                            "name": m.get("name"),
+                            "size_bytes": m.get("size"),
+                            "expires_at": m.get("expires_at"),
+                        }
+                        for m in running
+                    ]
+            except Exception:
+                # Keep endpoint resilient if /api/ps is not available.
+                pass
+
+    except Exception as exc:
+        model_metrics["error"] = str(exc)
+
+    return {
+        "api": request_metrics,
+        "memory": memory_metrics,
+        "models": model_metrics,
+    }
