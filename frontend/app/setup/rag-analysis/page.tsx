@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import SetupStepper from '../../components/SetupStepper';
+import PipelineGraph, { PipelineStepDef, PipelineStepState, StepStatus } from '../../components/PipelineGraph';
 import { api } from '../../lib/api';
 
 interface RagResult {
@@ -34,17 +35,22 @@ export default function RAGAnalysisPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
-  
+
   const logId = searchParams.get('log_id') || '';
   const urlDeps = searchParams.get('dependencies')?.split(',').filter(d => d) || [];
-  
-  const [loading, setLoading] = useState(false);
+
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<RagResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [resolvedDeps, setResolvedDeps] = useState<string[]>(urlDeps);
+
+  // Pipeline graph state
+  const [pipelineSteps, setPipelineSteps] = useState<PipelineStepDef[]>([]);
+  const [stepStates, setStepStates] = useState<Record<string, PipelineStepState>>({});
+  const [pipelineStatus, setPipelineStatus] = useState<'running' | 'complete' | 'error'>('running');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -68,31 +74,69 @@ export default function RAGAnalysisPage() {
   }, [status, logId]);
 
   const analyzeError = async (deps?: string[]) => {
+    setAnalyzing(true);
+    setError(null);
+    setResult(null);
+
+    // Reset pipeline state
+    setPipelineSteps([]);
+    setStepStates({});
+    setPipelineStatus('running');
+
     try {
-      setAnalyzing(true);
-      setError(null);
-
-      const response = await axios.post(
-        api(`/api/v1/rag/analyze-error-log`),
-        {
-          log_id: logId,
-          dependencies: (deps ?? resolvedDeps).filter(d => d),
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${session?.accessToken}`,
-          },
-        }
+      // POST → get run_id immediately (background task started)
+      const startResp = await axios.post(
+        api('/api/v1/rag/analyze-error-log'),
+        { log_id: logId, dependencies: (deps ?? resolvedDeps).filter(d => d) },
+        { headers: { Authorization: `Bearer ${session?.accessToken}` } },
       );
+      const runId: string = startResp.data.run_id;
 
-      setResult(response.data.data);
+      // Poll status every 1.5s
+      pollRef.current = setInterval(async () => {
+        try {
+          const poll = await axios.get(api(`/api/v1/rag/analysis-status/${runId}`), {
+            headers: { Authorization: `Bearer ${session?.accessToken}` },
+          });
+          const data = poll.data;
+
+          // Sync pipeline step definitions on first response
+          if (data.pipeline_steps?.length && pipelineSteps.length === 0) {
+            setPipelineSteps(data.pipeline_steps);
+          }
+          setStepStates(data.steps ?? {});
+
+          if (data.status === 'complete') {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setPipelineStatus('complete');
+            setResult(data.result);
+            setAnalyzing(false);
+          } else if (data.status === 'error') {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setPipelineStatus('error');
+            const detail = data.error_type === 'pipeline_not_ready'
+              ? { error: 'pipeline_not_ready', message: data.error, action: 'Complete the Embedding setup step first.', setup_url: '/setup/embedding' }
+              : data.error;
+            setError(typeof detail === 'string' ? detail : detail?.message ?? 'Analysis failed');
+            setAnalyzing(false);
+          }
+        } catch {
+          // transient poll failure — keep polling
+        }
+      }, 1500);
+
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to analyze error log');
-      console.error(err);
-    } finally {
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : detail?.message ?? 'Failed to start analysis');
+      setPipelineStatus('error');
       setAnalyzing(false);
     }
   };
+
+  // Cleanup interval on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const handleApproveFix = async () => {
     if (!result) return;
@@ -183,14 +227,25 @@ export default function RAGAnalysisPage() {
             </div>
           )}
 
-          {/* Loading State */}
-          {analyzing && !result && (
-            <div className="space-y-4 py-6">
-              <div className="animate-pulse space-y-3">
-                <div className="h-3 rounded w-3/4" style={{ background: 'rgba(0,212,255,0.08)' }} />
-                <div className="h-3 rounded w-1/2" style={{ background: 'rgba(0,212,255,0.05)' }} />
-              </div>
-              <p className="text-xs" style={{ color: '#607898', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '3px' }}>ANALYZING ERROR AND SEARCHING DOCUMENTATION...</p>
+          {/* Live Pipeline View */}
+          {analyzing && !result && pipelineSteps.length > 0 && (
+            <div className="py-4 rounded-xl p-5 mb-6" style={{ background: 'rgba(0,212,255,0.03)', border: '1px solid rgba(0,212,255,0.1)' }}>
+              <p className="mb-4 text-xs" style={{ fontFamily: "'Share Tech Mono', monospace", letterSpacing: '3px', color: '#607898' }}>
+                PIPELINE · LIVE EXECUTION
+              </p>
+              <PipelineGraph
+                steps={pipelineSteps}
+                stepStates={stepStates}
+                overallStatus={pipelineStatus}
+              />
+            </div>
+          )}
+
+          {/* Fallback spinner before first poll arrives */}
+          {analyzing && !result && pipelineSteps.length === 0 && (
+            <div className="py-8 flex flex-col items-center gap-4">
+              <div className="w-8 h-8 rounded-full border-2 border-transparent animate-spin" style={{ borderTopColor: '#00d4ff' }} />
+              <p className="text-xs" style={{ color: '#607898', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '3px' }}>INITIALIZING PIPELINE...</p>
             </div>
           )}
 
@@ -276,19 +331,25 @@ export default function RAGAnalysisPage() {
               </div>
 
               {/* RAGAS Evaluation Metrics */}
-              {result.ragas_scores && (
-                <div className="mt-6 rounded-xl overflow-hidden" style={{ background: '#0b0f1e', border: '1px solid rgba(167,139,250,0.22)' }}>
+              <div className="mt-6 rounded-xl overflow-hidden" style={{ background: '#0b0f1e', border: '1px solid rgba(167,139,250,0.22)' }}>
                   {/* Header */}
                   <div className="px-5 py-3 flex items-center gap-3" style={{ borderBottom: '1px solid rgba(167,139,250,0.12)' }}>
                     <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '11px', letterSpacing: '3px', color: '#a78bfa' }}>
-                      📊 RAGAS EVAL
+                      RAGAS EVAL
                     </span>
                     <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: '#607898' }}>
                       retrieval-augmented generation assessment score
                     </span>
                   </div>
 
-                  {/* Metric cards */}
+                  {!result.ragas_scores ? (
+                    <div className="px-5 py-4 text-xs" style={{ fontFamily: "'Share Tech Mono', monospace", color: '#607898' }}>
+                      Evaluation unavailable — Ollama did not return scoreable output.
+                      <span style={{ color: '#3b82f6', marginLeft: 8 }}>
+                        Check that Ollama is running and the model is pulled.
+                      </span>
+                    </div>
+                  ) : (
                   <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {([
                       {
@@ -417,8 +478,8 @@ export default function RAGAnalysisPage() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
-              )}
 
               {/* Feedback */}
               {!approved && (

@@ -18,6 +18,12 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://pytorch.org/docs",
         "repository_url": "https://github.com/pytorch/pytorch",
         "pypi_url": "https://pypi.org/project/torch/",
+        # pytorch.org uses JS-rendered docs — rely on secondary repos instead
+        "secondary_repos": [
+            "https://github.com/pytorch/tutorials",
+            "https://github.com/pytorch/examples",
+        ],
+        "scrape_docs_url": None,
     },
     "torchvision": {
         "display_name": "TorchVision",
@@ -27,6 +33,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://pytorch.org/vision/stable/",
         "repository_url": "https://github.com/pytorch/vision",
         "pypi_url": "https://pypi.org/project/torchvision/",
+        "secondary_repos": [],
+        "scrape_docs_url": None,
     },
     "torchaudio": {
         "display_name": "TorchAudio",
@@ -36,6 +44,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://pytorch.org/audio/stable/",
         "repository_url": "https://github.com/pytorch/audio",
         "pypi_url": "https://pypi.org/project/torchaudio/",
+        "secondary_repos": [],
+        "scrape_docs_url": None,
     },
     "scikit-learn": {
         "display_name": "Scikit-Learn",
@@ -45,6 +55,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://scikit-learn.org/stable/",
         "repository_url": "https://github.com/scikit-learn/scikit-learn",
         "pypi_url": "https://pypi.org/project/scikit-learn/",
+        "secondary_repos": [],
+        "scrape_docs_url": "https://scikit-learn.org/stable/user_guide.html",
     },
     "monai": {
         "display_name": "MONAI",
@@ -54,6 +66,10 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://docs.monai.io",
         "repository_url": "https://github.com/Project-MONAI/MONAI",
         "pypi_url": "https://pypi.org/project/monai/",
+        "secondary_repos": [
+            "https://github.com/Project-MONAI/tutorials",
+        ],
+        "scrape_docs_url": "https://docs.monai.io/en/stable/",
     },
     "requests": {
         "display_name": "Requests",
@@ -63,6 +79,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://requests.readthedocs.io",
         "repository_url": "https://github.com/psf/requests",
         "pypi_url": "https://pypi.org/project/requests/",
+        "secondary_repos": [],
+        "scrape_docs_url": "https://requests.readthedocs.io/en/latest/",
     },
     "pyramid": {
         "display_name": "Pyramid",
@@ -72,6 +90,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://docs.pylonsproject.org/projects/pyramid",
         "repository_url": "https://github.com/Pylons/pyramid",
         "pypi_url": "https://pypi.org/project/pyramid/",
+        "secondary_repos": [],
+        "scrape_docs_url": "https://docs.pylonsproject.org/projects/pyramid/en/latest/",
     },
     "waitress": {
         "display_name": "Waitress",
@@ -81,6 +101,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://docs.pylonsproject.org/projects/waitress",
         "repository_url": "https://github.com/Pylons/waitress",
         "pypi_url": "https://pypi.org/project/waitress/",
+        "secondary_repos": [],
+        "scrape_docs_url": "https://docs.pylonsproject.org/projects/waitress/en/stable/",
     },
     "flower": {
         "display_name": "Flower",
@@ -90,6 +112,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://flower.readthedocs.io",
         "repository_url": "https://github.com/mher/flower",
         "pypi_url": "https://pypi.org/project/flower/",
+        "secondary_repos": [],
+        "scrape_docs_url": "https://flower.readthedocs.io/en/latest/",
     },
     "tenseal": {
         "display_name": "TenSEAL",
@@ -99,6 +123,8 @@ AVAILABLE_DEPENDENCIES = {
         "documentation_url": "https://tenseal.readthedocs.io",
         "repository_url": "https://github.com/OpenMined/TenSEAL",
         "pypi_url": "https://pypi.org/project/tenseal/",
+        "secondary_repos": [],
+        "scrape_docs_url": "https://tenseal.readthedocs.io/en/latest/",
     },
 }
 

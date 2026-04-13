@@ -46,6 +46,8 @@ export default function DependenciesSetup() {
 
   type FetchDepth = 'quick' | 'balanced' | 'full';
   const [fetchDepth, setFetchDepth] = useState<FetchDepth>('balanced');
+  const [pipelinePhase, setPipelinePhase] = useState<'fetching' | 'embedding' | 'done' | 'error'>('fetching');
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [rateLimit, setRateLimit] = useState<{
     remaining: number | null; limit: number | null; reset_in_min: number | null;
     authenticated: boolean; can_fetch: boolean; error?: string;
@@ -180,17 +182,17 @@ export default function DependenciesSetup() {
     }
   };
 
-  // Poll doc-fetch status while fetching is in progress
+  // Poll the full pipeline (fetch → embed) while in progress
   useEffect(() => {
     if (!fetchingDocs) return;
     const interval = setInterval(async () => {
       try {
         const resp = await axios.get(api('/api/v1/setup/fetch-docs/status'));
         setFetchStatus(resp.data.deps || {});
-        if (resp.data.all_done) {
+        setPipelinePhase(resp.data.pipeline_phase || 'fetching');
+        if (resp.data.pipeline_error) setPipelineError(resp.data.pipeline_error);
+        if (resp.data.pipeline_complete) {
           clearInterval(interval);
-          // Brief pause so user sees the completed state, then navigate
-          setTimeout(() => router.push('/setup/progress'), 1200);
         }
       } catch {
         // non-fatal — keep polling
@@ -234,12 +236,14 @@ export default function DependenciesSetup() {
           </div>
         )}
 
-        {/* ---- Doc-fetch progress view ---- */}
+        {/* ---- Pipeline progress view (fetch → embed → done) ---- */}
         {fetchingDocs ? (
-          <div>
-            <div className="mb-6 p-4 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.18)' }}>
+          <div className="space-y-4">
+
+            {/* Stage 1: Fetch */}
+            <div className="p-4 rounded-lg" style={{ background: '#0b0f1e', border: '1px solid rgba(0,212,255,0.18)' }}>
               <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '4px', color: '#00d4ff', marginBottom: '16px' }}>
-                // FETCHING DOCUMENTATION FROM GITHUB
+                // STAGE 1 · FETCHING DOCUMENTATION
               </p>
               <div className="space-y-3">
                 {Object.entries(fetchStatus).map(([name, info]) => {
@@ -263,9 +267,7 @@ export default function DependenciesSetup() {
                   return (
                     <div key={name} className="flex items-center gap-3 rounded px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${statusColor}22` }}>
                       <span style={{ color: statusColor, fontFamily: "'Share Tech Mono', monospace", fontSize: '14px', minWidth: '16px' }}>
-                        {info.status === 'fetching' ? (
-                          <span className="inline-block animate-spin">◌</span>
-                        ) : icon}
+                        {info.status === 'fetching' ? <span className="inline-block animate-spin">◌</span> : icon}
                       </span>
                       <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', color: '#dce8f8', minWidth: '140px' }}>{name}</span>
                       <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: statusColor }}>{label}</span>
@@ -273,18 +275,65 @@ export default function DependenciesSetup() {
                   );
                 })}
               </div>
-              {Object.values(fetchStatus).every((v) => ['done', 'warning', 'error'].includes(v.status)) && (
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={() => router.push('/setup/progress')}
-                    className="rounded text-xs transition-all"
-                    style={{ background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.4)', color: '#00ff88', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '9px 24px' }}
-                  >
-                    CONTINUE TO PHASE 2 →
-                  </button>
-                </div>
-              )}
             </div>
+
+            {/* Stage 2: Embedding (visible once fetch is done) */}
+            {(pipelinePhase === 'embedding' || pipelinePhase === 'done' || pipelinePhase === 'error') && (
+              <div className="p-4 rounded-lg" style={{
+                background: '#0b0f1e',
+                border: `1px solid ${pipelinePhase === 'done' ? 'rgba(0,255,136,0.25)' : pipelinePhase === 'error' ? 'rgba(255,60,60,0.25)' : 'rgba(0,212,255,0.18)'}`,
+              }}>
+                <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '4px', color: pipelinePhase === 'done' ? '#00ff88' : pipelinePhase === 'error' ? '#ff3c3c' : '#00d4ff', marginBottom: '16px' }}>
+                  // STAGE 2 · EMBEDDING &amp; VECTOR INDEXING
+                </p>
+                {pipelinePhase === 'embedding' && (
+                  <div className="flex items-center gap-3">
+                    <span className="inline-block animate-spin" style={{ color: '#00d4ff', fontSize: '14px' }}>◌</span>
+                    <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', color: '#8cb4d4' }}>
+                      Generating embeddings and indexing into vector database...
+                    </span>
+                  </div>
+                )}
+                {pipelinePhase === 'done' && (
+                  <div className="flex items-center gap-3">
+                    <span style={{ color: '#00ff88', fontSize: '14px' }}>✓</span>
+                    <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '12px', color: '#00ff88' }}>
+                      Indexed and ready for RAG analysis
+                    </span>
+                  </div>
+                )}
+                {pipelinePhase === 'error' && (
+                  <div>
+                    <p style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '11px', color: '#ff3c3c' }}>
+                      ⚠ {pipelineError || 'Embedding failed — docs were fetched but could not be indexed.'}
+                    </p>
+                    <button
+                      onClick={() => router.push('/setup/embedding')}
+                      className="mt-3 text-xs"
+                      style={{ color: '#ffb700', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '1px' }}
+                    >
+                      Retry embedding →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Done: go to dashboard */}
+            {pipelinePhase === 'done' && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="rounded text-xs transition-all"
+                  style={{ background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.4)', color: '#00ff88', fontFamily: "'Share Tech Mono', monospace", letterSpacing: '2px', padding: '9px 24px' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,255,136,0.16)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,255,136,0.08)')}
+                >
+                  GO TO DASHBOARD →
+                </button>
+              </div>
+            )}
+
           </div>
         ) : (
         <form onSubmit={handleSubmit}>
@@ -529,7 +578,7 @@ export default function DependenciesSetup() {
               onMouseEnter={e => { if (!submitting && selected.length > 0) (e.currentTarget as HTMLElement).style.background = 'rgba(0,255,136,0.16)'; }}
               onMouseLeave={e => { if (!submitting && selected.length > 0) (e.currentTarget as HTMLElement).style.background = 'rgba(0,255,136,0.08)'; }}
             >
-              {submitting ? 'LOADING DOCS...' : 'CONTINUE TO PHASE 2 →'}
+              {submitting ? 'STARTING...' : 'FETCH & INDEX DOCUMENTATION →'}
             </button>
           </div>
 
