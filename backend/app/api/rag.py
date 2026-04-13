@@ -19,6 +19,18 @@ router = APIRouter(prefix="/api/v1/rag", tags=["rag"])
 # Hardcoded user for now (TODO: Get from NextAuth session)
 CURRENT_USER_ID = "test-user-123"
 
+# ---------------------------------------------------------------------------
+# In-memory pipeline run status store (keyed by run_id).
+# ---------------------------------------------------------------------------
+_pipeline_status: Dict[str, Dict[str, Any]] = {}
+
+PIPELINE_STEPS = [
+    {"id": "log_parse",     "label": "Log Parser",    "description": "Load & parse error log"},
+    {"id": "doc_retrieval", "label": "Doc Retrieval", "description": "pgvector similarity search"},
+    {"id": "fix_generation","label": "Fix Generation","description": "LLM fix synthesis"},
+    {"id": "ragas_eval",    "label": "RAGAS Eval",    "description": "Quality scoring"},
+]
+
 DEFAULT_BUDGET = {
     "max_seconds": 120,
     "max_steps": 10,
@@ -140,6 +152,15 @@ class AnalyzeErrorLogRequest(BaseModel):
     """Request model for error log analysis."""
     log_id: str
     dependencies: Optional[List[str]] = None
+
+
+class ApproveFixRequest(BaseModel):
+    fix_index: int = 0
+    feedback: Optional[str] = None
+
+
+class RejectFixRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 class PlanRequest(BaseModel):
@@ -332,64 +353,97 @@ async def execute_rag_plan(request: ExecutePlanRequest, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail=f"Execution failed: {exc}")
 
 
+async def _run_analysis_background(run_id: str, log_id: str, dependencies: List[str]) -> None:
+    """Background task: run full RAG pipeline and update _pipeline_status."""
+    from backend.app.database import SessionLocal
+
+    def _callback(step_id: str, step_status: str, **extra):
+        if run_id not in _pipeline_status:
+            return
+        _pipeline_status[run_id]["steps"][step_id] = {
+            "status": step_status,
+            **extra,
+        }
+
+    db = SessionLocal()
+    try:
+        # Validate log before starting
+        log = db.query(Log).filter(Log.id == log_id, Log.user_id == CURRENT_USER_ID).first()
+        if not log:
+            _pipeline_status[run_id].update({"status": "error", "error": "Log not found"})
+            return
+        if not log.is_processed:
+            _pipeline_status[run_id].update({"status": "error", "error": "Log not yet processed"})
+            return
+
+        engine = RAGEngine(db)
+        result = await engine.analyze_error_and_generate_fix(
+            log_id=log_id,
+            user_id=CURRENT_USER_ID,
+            selected_dependencies=dependencies,
+            step_callback=_callback,
+        )
+        _pipeline_status[run_id].update({"status": "complete", "result": result})
+        logger.info(f"✓ Background RAG analysis complete — run {run_id}")
+
+    except PipelineNotReadyError as e:
+        _pipeline_status[run_id].update({"status": "error", "error": str(e), "error_type": "pipeline_not_ready"})
+    except Exception as e:
+        logger.error(f"Background analysis failed (run {run_id}): {e}")
+        _pipeline_status[run_id].update({"status": "error", "error": str(e)})
+        # Mark any still-running step as error
+        for step in _pipeline_status[run_id]["steps"].values():
+            if step.get("status") == "running":
+                step["status"] = "error"
+    finally:
+        db.close()
+
+
 @router.post("/analyze-error-log")
 async def analyze_error_log(
     request: AnalyzeErrorLogRequest,
-    db: Session = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ):
-    """Analyze error log and generate fix suggestions using RAG.
-    
-    Args:
-        request: AnalyzeErrorLogRequest with log_id and optional dependencies
-        db: Database session
-    
-    Returns:
-        Generated fix suggestions with retrieved documentation context
-    """
-    try:
-        # Verify log exists and belongs to user
-        log = db.query(Log).filter(
-            Log.id == request.log_id,
-            Log.user_id == CURRENT_USER_ID
-        ).first()
-        
-        if not log:
-            raise HTTPException(status_code=404, detail="Log not found")
-        
-        if not log.is_processed:
-            raise HTTPException(status_code=400, detail="Log not yet processed/analyzed")
-        
-        # Run RAG analysis (async — Ollama calls are run in thread pool)
-        engine = RAGEngine(db)
-        result = await engine.analyze_error_and_generate_fix(
-            log_id=request.log_id,
-            user_id=CURRENT_USER_ID,
-            selected_dependencies=request.dependencies
-        )
-        
-        logger.info(f"✓ RAG analysis complete for log {request.log_id}")
-        
-        return {
-            "status": "success",
-            "data": result
-        }
-        
-    except HTTPException:
-        raise
-    except PipelineNotReadyError as e:
-        logger.warning(f"Pipeline not ready for log {request.log_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "error": "pipeline_not_ready",
-                "message": str(e),
-                "action": "Complete the Embedding setup step before analysing logs.",
-                "setup_url": "/setup/embedding",
-            },
-        )
-    except Exception as e:
-        logger.error(f"Error analyzing log: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Start RAG analysis as a background task. Returns run_id for polling."""
+    run_id = str(uuid.uuid4())
+
+    _pipeline_status[run_id] = {
+        "status": "running",
+        "steps": {s["id"]: {"status": "idle"} for s in PIPELINE_STEPS},
+        "result": None,
+        "error": None,
+    }
+
+    background_tasks.add_task(
+        _run_analysis_background,
+        run_id,
+        request.log_id,
+        request.dependencies or [],
+    )
+
+    return {"run_id": run_id, "status": "running"}
+
+
+@router.get("/analysis-status/{run_id}")
+async def get_analysis_status(run_id: str):
+    """Poll live pipeline progress. Returns steps + final result when complete."""
+    data = _pipeline_status.get(run_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    resp: Dict[str, Any] = {
+        "run_id": run_id,
+        "status": data["status"],   # running | complete | error
+        "steps": data["steps"],
+        "pipeline_steps": PIPELINE_STEPS,
+    }
+    if data["status"] == "complete":
+        resp["result"] = data["result"]
+    if data["status"] == "error":
+        resp["error"] = data["error"]
+        resp["error_type"] = data.get("error_type")
+    return resp
 
 
 @router.get("/query/{query_id}")
@@ -484,8 +538,7 @@ async def list_user_queries(
 @router.post("/approve-fix/{query_id}")
 async def approve_fix(
     query_id: str,
-    fix_index: int = 0,
-    feedback: Optional[str] = None,
+    request: ApproveFixRequest,
     db: Session = Depends(get_db)
 ):
     """Approve a suggested fix.
@@ -510,10 +563,13 @@ async def approve_fix(
         if not query.suggested_fixes or fix_index >= len(query.suggested_fixes):
             raise HTTPException(status_code=400, detail="Invalid fix index")
         
+        fix_index = request.fix_index
+        feedback = request.feedback
+
         # Mark as approved
         query.is_response_approved = True
         query.accepted_fix = query.suggested_fixes[fix_index]
-        
+
         # Store evaluation if provided
         if feedback:
             query.evaluation_feedback = feedback
@@ -539,7 +595,7 @@ async def approve_fix(
 @router.post("/reject-fix/{query_id}")
 async def reject_fix(
     query_id: str,
-    reason: Optional[str] = None,
+    request: RejectFixRequest,
     db: Session = Depends(get_db)
 ):
     """Reject a suggested fix.
@@ -561,9 +617,9 @@ async def reject_fix(
             raise HTTPException(status_code=404, detail="Query not found")
         
         query.is_response_approved = False
-        
-        if reason:
-            query.evaluation_feedback = reason
+
+        if request.reason:
+            query.evaluation_feedback = request.reason
             query.is_evaluated = True
         
         db.commit()

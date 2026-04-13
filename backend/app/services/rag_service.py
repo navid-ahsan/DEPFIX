@@ -350,6 +350,37 @@ class RAGASEvaluator:
         """Async wrapper — runs blocking Ollama call in a thread."""
         return await asyncio.to_thread(self.evaluate, question, answer, contexts)
 
+    @staticmethod
+    def _extract_scores(raw: str) -> Optional[dict]:
+        """
+        Robustly extract a JSON scores dict from Ollama response text.
+
+        Handles:
+          - Pure JSON responses
+          - Thinking-model output: <think>...</think> followed by JSON
+          - JSON embedded anywhere in prose text
+        """
+        import re as _re
+
+        # 1. Strip <think>...</think> blocks (qwen3, deepseek-r1, etc.)
+        cleaned = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
+
+        # 2. Try direct parse first
+        try:
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # 3. Extract the outermost {...} block from mixed text
+        match = _re.search(r'\{[^{}]*\}', cleaned, _re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return None
+
     def evaluate(
         self,
         question: str,
@@ -366,29 +397,44 @@ class RAGASEvaluator:
         ctx_block = "\n".join(
             f"[Context {i + 1}]: {c[:300]}" for i, c in enumerate(contexts[:5])
         )
+        # Explicit JSON schema in the prompt helps thinking models stay on target
         prompt = (
-            "You are an expert RAG evaluator. Score the following RAG output on 4 metrics.\n"
-            "Return ONLY a valid JSON object — no extra text.\n\n"
-            f"QUESTION (error log):\n{question[:600]}\n\n"
+            "You are an expert RAG evaluator. Score the RAG output below on 4 metrics.\n"
+            "Respond with ONLY a JSON object matching this exact schema — no prose, no explanation:\n"
+            '{"faithfulness": <0.0-1.0>, "answer_relevance": <0.0-1.0>, "context_precision": <0.0-1.0>, "context_recall": <0.0-1.0>}\n\n'
+            f"QUESTION:\n{question[:600]}\n\n"
             f"RETRIEVED CONTEXTS:\n{ctx_block}\n\n"
             f"GENERATED ANSWER:\n{answer[:800]}\n\n"
-            "Score each metric from 0.0 (poor) to 1.0 (perfect):\n"
-            "- faithfulness: Are all claims in the answer supported by the retrieved contexts?\n"
-            "- answer_relevance: Does the answer directly address the question / error?\n"
-            "- context_precision: Are the retrieved contexts actually relevant to this error?\n"
-            "- context_recall: Do the retrieved contexts cover all key information needed to explain this error?\n\n"
-            'Return ONLY JSON, e.g.: {"faithfulness": 0.85, "answer_relevance": 0.90, "context_precision": 0.75, "context_recall": 0.80}'
+            "Scoring guide:\n"
+            "- faithfulness: fraction of answer claims supported by the retrieved contexts\n"
+            "- answer_relevance: how directly the answer addresses the question/error\n"
+            "- context_precision: fraction of retrieved contexts that are relevant to this error\n"
+            "- context_recall: how completely the retrieved contexts cover the knowledge needed\n\n"
+            'JSON only: {"faithfulness": 0.85, "answer_relevance": 0.90, "context_precision": 0.75, "context_recall": 0.80}'
         )
+        keys = ("faithfulness", "answer_relevance", "context_precision", "context_recall")
         try:
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
                 json={"model": self.model, "prompt": prompt, "stream": False, "format": "json"},
                 timeout=90,
             )
-            raw = response.json().get("response", "{}")
-            scores = json.loads(raw)
-            keys = ("faithfulness", "answer_relevance", "context_precision", "context_recall")
-            return {k: round(max(0.0, min(1.0, float(scores.get(k, 0.0)))), 2) for k in keys}
+            raw = response.json().get("response", "")
+            logger.debug(f"RAGAS raw response ({len(raw)} chars): {raw[:200]}")
+
+            scores = self._extract_scores(raw)
+            if not scores:
+                logger.warning(f"RAGAS: could not extract scores from response: {raw[:300]}")
+                return None
+
+            result = {k: round(max(0.0, min(1.0, float(scores.get(k, 0.0)))), 2) for k in keys}
+
+            # If all scores are 0 the model likely returned an empty/wrong object
+            if all(v == 0.0 for v in result.values()):
+                logger.warning(f"RAGAS: all scores are 0 — raw was: {raw[:300]}")
+                return None
+
+            return result
         except Exception as e:
             logger.warning(f"RAGAS evaluation failed: {e}")
             return None
@@ -450,11 +496,24 @@ class RAGEngine:
         self,
         log_id: str,
         user_id: str,
-        selected_dependencies: Optional[List[str]] = None
+        selected_dependencies: Optional[List[str]] = None,
+        step_callback: Optional[callable] = None,
     ) -> Dict[str, Any]:
-        """Async: Analyze error log and generate fix suggestions."""
+        """Async: Analyze error log and generate fix suggestions.
 
-        # DB queries are fast; run in thread to be safe in async context
+        step_callback(step_id, status, **extra) is called at each pipeline
+        transition so callers can track live progress.
+        """
+        import time as _time
+
+        def _step(step_id: str, status: str, **extra):
+            if step_callback:
+                step_callback(step_id, status, **extra)
+
+        # ── Step 1: Load log ────────────────────────────────────────────────
+        _step("log_parse", "running")
+        t0 = _time.time()
+
         log = await asyncio.to_thread(
             lambda: self.db.query(Log).filter(
                 Log.id == log_id, Log.user_id == user_id
@@ -462,34 +521,49 @@ class RAGEngine:
         )
 
         if not log:
+            _step("log_parse", "error", detail="Log not found")
             raise ValueError(f"Log {log_id} not found")
 
-        # Guard: ensure embedding pipeline is ready before attempting retrieval
         await self.check_pipeline_ready()
+        _step("log_parse", "done", duration_ms=int((_time.time() - t0) * 1000))
 
-        # Retrieve docs (embedding call — blocking network I/O)
+        # ── Step 2: Document retrieval ──────────────────────────────────────
+        _step("doc_retrieval", "running")
+        t0 = _time.time()
+
         relevant_docs = await self.retriever.retrieve_relevant_docs_async(
             error_text=log.error_summary.get("sample_errors", [{}])[0].get("content", log.content[:500]),
             db=self.db,
             dependency_names=selected_dependencies,
-            top_k=5
+            top_k=5,
         )
+        _step("doc_retrieval", "done",
+              duration_ms=int((_time.time() - t0) * 1000),
+              detail=f"{len(relevant_docs)} chunks retrieved")
 
-        # Generate fix (LLM call — blocking network I/O, up to 3 min)
+        # ── Step 3: Fix generation ──────────────────────────────────────────
+        _step("fix_generation", "running")
+        t0 = _time.time()
+
         dependencies = selected_dependencies or []
         fix = await self.fix_generator.generate_fix_async(
             error_log=log.content[:2000],
             relevant_docs=relevant_docs,
             dependencies=dependencies,
         )
+        _step("fix_generation", "done", duration_ms=int((_time.time() - t0) * 1000))
 
-        # RAGAS evaluation runs after fix is ready (needs the generated answer)
+        # ── Step 4: RAGAS evaluation ────────────────────────────────────────
+        _step("ragas_eval", "running")
+        t0 = _time.time()
+
         contexts = [d.get("content", "") for d in relevant_docs]
         ragas_scores = await self.evaluator.evaluate_async(
             question=log.content[:800],
             answer=fix.get("full_response", ""),
             contexts=contexts,
         )
+        _step("ragas_eval", "done", duration_ms=int((_time.time() - t0) * 1000))
 
         # Store query result
         query = Query(

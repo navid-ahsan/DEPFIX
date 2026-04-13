@@ -111,6 +111,7 @@ async def select_deps_endpoint(
     # Initialise fetch-status tracking
     all_dep_names = list(request.dependency_names) + [c.name for c in (request.custom_dependencies or [])]
     _fetch_status[user_id] = {name: {"status": "pending"} for name in all_dep_names}
+    _fetch_status[user_id]["_phase"] = "fetching"
 
     # Retrieve stored GitHub token (used for authenticated API calls)
     config = db.query(UserConfig).filter(UserConfig.user_id == user_id).first()
@@ -129,47 +130,27 @@ async def select_deps_endpoint(
     }
 
     async def _do_fetch() -> None:
-        from backend.app.services.docs_fetcher import fetch_and_save_docs, resolve_github_url
-        from pathlib import Path
-
-        # Known repo URLs from AVAILABLE_DEPENDENCIES
-        known_urls = {k: v.get("repository_url") for k, v in AVAILABLE_DEPENDENCIES.items()}
-
-        for dep_name in all_dep_names:
-            _fetch_status[user_id][dep_name]["status"] = "fetching"
-            try:
-                repo_url = await resolve_github_url(
-                    dep_name,
-                    custom_repo_url=custom_url_map.get(dep_name),
-                    known_urls=known_urls,
-                )
-                if repo_url:
-                    result = await fetch_and_save_docs(dep_name, repo_url, github_token, max_files=max_files)
-                else:
-                    # No GitHub URL — check if we already have a local JSONL
-                    local = Path(f"data/documents/{dep_name}.jsonl")
-                    if local.exists():
-                        result = {"status": "done", "chunks": 0, "files": 0, "requests_used": 0, "source": "local"}
-                    else:
-                        result = {"status": "error", "message": "No GitHub URL found and no local docs available", "chunks": 0, "files": 0, "requests_used": 0}
-                _fetch_status[user_id][dep_name] = result
-            except Exception as exc:
-                _fetch_status[user_id][dep_name] = {"status": "error", "message": str(exc), "chunks": 0, "files": 0, "requests_used": 0}
-    async def _do_fetch() -> None:
         import asyncio
         from backend.app.services.docs_fetcher import (
             fetch_and_save_docs, resolve_github_url, check_rate_limit,
         )
+        from backend.app.services.embedding_service import embed_all_selected_dependencies
+        from backend.app.database import SessionLocal
         from pathlib import Path
 
         known_urls = {k: v.get("repository_url") for k, v in AVAILABLE_DEPENDENCIES.items()}
+        _fetch_status[user_id]["_phase"] = "fetching"
 
         for dep_name in all_dep_names:
             _fetch_status[user_id][dep_name]["status"] = "fetching"
             try:
                 # ── pre-fetch rate-limit guard ──────────────────────────────
+                dep_cfg = AVAILABLE_DEPENDENCIES.get(dep_name, {})
+                n_secondary = len(dep_cfg.get("secondary_repos") or [])
+                secondary_cap = max(5, max_files // 2)
+                # 1 tree + files per repo; secondary repos use smaller budget
+                needed = (max_files + 2) + n_secondary * (secondary_cap + 1)
                 rl = await check_rate_limit(github_token)
-                needed = max_files + 2  # 1 tree request + file requests
                 if rl["remaining"] < needed:
                     wait_secs = rl["reset_in_sec"] + 10  # small buffer
                     reset_min = max(1, wait_secs // 60)
@@ -177,7 +158,6 @@ async def select_deps_endpoint(
                     _fetch_status[user_id][dep_name]["message"] = (
                         f"Rate limited — pausing {reset_min} min then continuing"
                     )
-                    # Wait for the rate limit window to reset, then retry
                     await asyncio.sleep(min(wait_secs, 3660))
                     _fetch_status[user_id][dep_name]["status"] = "fetching"
                     _fetch_status[user_id][dep_name].pop("message", None)
@@ -188,7 +168,14 @@ async def select_deps_endpoint(
                     known_urls=known_urls,
                 )
                 if repo_url:
-                    result = await fetch_and_save_docs(dep_name, repo_url, github_token, max_files=max_files)
+                    result = await fetch_and_save_docs(
+                        dep_name,
+                        repo_url,
+                        github_token,
+                        max_files=max_files,
+                        secondary_repos=dep_cfg.get("secondary_repos") or [],
+                        scrape_docs_url=dep_cfg.get("scrape_docs_url"),
+                    )
                 else:
                     local = Path(f"data/documents/{dep_name}.jsonl")
                     if local.exists():
@@ -204,6 +191,25 @@ async def select_deps_endpoint(
                 _fetch_status[user_id][dep_name] = {
                     "status": "error", "message": str(exc), "chunks": 0, "files": 0, "requests_used": 0,
                 }
+
+        # ── Auto-trigger embedding ──────────────────────────────────────────
+        # Embed deps that have data (done or warning = partial data still usable)
+        embeddable = [
+            n for n in all_dep_names
+            if _fetch_status[user_id].get(n, {}).get("status") in ("done", "warning")
+        ]
+        _fetch_status[user_id]["_phase"] = "embedding"
+        if embeddable:
+            db_session = SessionLocal()
+            try:
+                await embed_all_selected_dependencies(db_session, user_id, embeddable)
+            except Exception as exc:
+                _fetch_status[user_id]["_phase_error"] = str(exc)
+            finally:
+                db_session.close()
+
+        _fetch_status[user_id]["_phase"] = "done"
+
     background_tasks.add_task(_do_fetch)
 
     doc_availability = check_doc_availability(request.dependency_names)
@@ -293,10 +299,24 @@ async def get_fetch_docs_status():
       }
     """
     user_id = "test-user-123"
-    deps = _fetch_status.get(user_id, {})
+    all_data = _fetch_status.get(user_id, {})
+
+    # Separate pipeline-internal keys (prefixed with _) from per-dep status
+    phase = all_data.get("_phase", "fetching")
+    phase_error = all_data.get("_phase_error")
+    deps = {k: v for k, v in all_data.items() if not k.startswith("_")}
+
     done_statuses = {"done", "warning", "error"}
-    all_done = bool(deps) and all(v.get("status") in done_statuses for v in deps.values())
-    return {"all_done": all_done, "deps": deps}
+    fetch_done = bool(deps) and all(v.get("status") in done_statuses for v in deps.values())
+    pipeline_complete = phase == "done"
+
+    return {
+        "all_done": fetch_done,
+        "pipeline_phase": phase,        # "fetching" | "embedding" | "done"
+        "pipeline_complete": pipeline_complete,
+        "pipeline_error": phase_error,
+        "deps": deps,
+    }
 
 
 @router.get("/status", response_model=SetupStatusResponse)
@@ -397,6 +417,8 @@ def _classify_source(source: str) -> str:
         return "old_local"
     if "raw.githubusercontent.com" in source:
         return "github_raw"
+    if source.startswith("http"):
+        return "web_scrape"
     return "other"
 
 
